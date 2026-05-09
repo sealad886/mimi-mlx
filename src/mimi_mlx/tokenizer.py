@@ -160,19 +160,38 @@ class MimiTokenizer:
 
 
 def save_tokens_npz(path: str | Path, tokens: MimiTokens) -> None:
-    arrays: dict[str, np.ndarray | str | int | float] = {
-        "codes": np.array(tokens.codes),
-        "lengths": np.array(tokens.lengths),
-        "sample_rate": tokens.sample_rate,
-        "frame_rate": tokens.frame_rate,
-        "layout": tokens.layout,
+    arrays: dict[str, mx.array] = {
+        "codes": tokens.codes,
+        "lengths": tokens.lengths,
+        "sample_rate": mx.array(tokens.sample_rate, dtype=mx.int32),
+        "frame_rate": mx.array(tokens.frame_rate, dtype=mx.float32),
+        "layout": _encode_layout(tokens.layout),
     }
     if tokens.audio_lengths is not None:
-        arrays["audio_lengths"] = np.array(tokens.audio_lengths)
-    np.savez(path, **arrays)
+        arrays["audio_lengths"] = tokens.audio_lengths
+    mx.savez(path, **arrays)
 
 
 def load_tokens_npz(path: str | Path) -> MimiTokens:
+    try:
+        data = mx.load(path)
+    except ValueError:
+        return _load_legacy_tokens_npz(path)
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected token archive with named arrays, got {type(data).__name__}")
+
+    audio_lengths = data.get("audio_lengths")
+    return MimiTokens(
+        codes=data["codes"],
+        lengths=data["lengths"],
+        sample_rate=int(data["sample_rate"]),
+        frame_rate=float(data["frame_rate"]),
+        audio_lengths=audio_lengths,
+        layout=_decode_layout(data["layout"]),
+    )
+
+
+def _load_legacy_tokens_npz(path: str | Path) -> MimiTokens:
     with np.load(path, allow_pickle=False) as data:
         audio_lengths = mx.array(data["audio_lengths"]) if "audio_lengths" in data.files else None
         return MimiTokens(
@@ -185,14 +204,23 @@ def load_tokens_npz(path: str | Path) -> MimiTokens:
         )
 
 
+def _encode_layout(layout: str) -> mx.array:
+    return mx.array(list(layout.encode("utf-8")), dtype=mx.uint8)
+
+
+def _decode_layout(layout: mx.array) -> str:
+    return bytes(layout.tolist()).decode("utf-8")
+
+
 def save_tokens_npy(path: str | Path, codes: mx.array) -> None:
-    np.save(path, np.array(codes))
+    mx.save(path, codes)
 
 
 def load_tokens_npy(path: str | Path, *, sample_rate: int, frame_rate: float) -> MimiTokens:
-    codes = mx.array(np.load(path, allow_pickle=False))
-    if codes.ndim != 3:
-        raise ValueError(f"Expected saved codes with shape [B,T,K], got {codes.shape}")
+    codes = mx.load(path)
+    if not hasattr(codes, "ndim") or codes.ndim != 3:
+        shape = getattr(codes, "shape", None)
+        raise ValueError(f"Expected saved codes with shape [B,T,K], got {shape}")
     lengths = mx.full((codes.shape[0],), codes.shape[1], dtype=mx.int32)
     return MimiTokens(codes=codes, lengths=lengths, sample_rate=sample_rate, frame_rate=frame_rate)
 
