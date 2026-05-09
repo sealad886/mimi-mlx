@@ -126,7 +126,9 @@ input sample lengths when explicit lengths were provided.
 ## Token files
 
 The CLI reads and writes `.npy` files containing canonical token codes only.
-The Python API also has `.npz` helpers that preserve token metadata:
+Token arrays are saved with MLX-native IO, so encode paths do not materialize
+codes through NumPy before writing them. The Python API also has `.npz` helpers
+that preserve token metadata:
 
 ```python
 from mimi_mlx import MimiTokenizer
@@ -157,6 +159,21 @@ mimi-mlx encode fixtures/audio/sine_440_025s.wav \
 
 JSON output includes the command name, input path, output path, token shape,
 sample rate, frame rate, and token layout.
+
+### Encode Directory
+
+```bash
+mimi-mlx encode-dir fixtures/audio \
+  --weights fixtures/reference/hf \
+  --output-dir /tmp/mimi_tokens \
+  --prefetch-workers 2 \
+  --json
+```
+
+`encode-dir` reads WAV files through a bounded thread prefetcher, converts each
+clip to an MLX array once immediately before tokenization, and saves each token
+file with MLX-native `.npy` serialization. Worker threads pass paths and decoded
+CPU audio only; token tensors stay on the MLX path until they are written.
 
 ### Decode
 
@@ -200,16 +217,17 @@ names that `rustymimi` expects.
 
 ```bash
 mimi-mlx benchmark encode --weights fixtures/reference/hf \
-  --input-dir fixtures/audio --json
+  --input-dir fixtures/audio --prefetch-workers 2 --json
 mimi-mlx benchmark decode --weights fixtures/reference/hf \
-  --input-dir fixtures/audio --json
+  --input-dir fixtures/audio --prefetch-workers 2 --json
 mimi-mlx benchmark batching --weights fixtures/reference/hf \
   --input-dir fixtures/audio --batch-sizes 1,2,4,8 --json
 ```
 
 Benchmark commands emit elapsed time, audio seconds, real-time factor, and
-token-frame counts where applicable. See `docs/benchmarks.md` for current local
-smoke results.
+token-frame counts where applicable. Encode and decode benchmarks use the same
+threaded audio prefetch path as `encode-dir`. See `docs/benchmarks.md` for
+current local smoke results.
 
 ## Troubleshooting
 

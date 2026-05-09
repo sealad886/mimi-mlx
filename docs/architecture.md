@@ -44,6 +44,20 @@ Moshi tokenizer checkpoint, not the Hugging Face `kyutai/mimi/model.safetensors`
 file. The comparison uses full 32-codebook output and the upstream token layout
 `[batch, codebook, time]`.
 
+## Throughput Architecture
+
+Audio container decode remains CPU-side because the repository uses
+libsndfile-backed WAV reading. High-throughput directory encode and encode/decode
+benchmarks overlap that CPU work with MLX tokenization through a bounded thread
+prefetcher. Threads pass paths and decoded CPU audio to the main thread; they do
+not pass token tensors or GPU-resident model data between processes.
+
+Each clip is converted to `mx.array` exactly once, immediately before the Mimi
+tokenizer runs. Token arrays remain MLX arrays after encode and are written with
+MLX-native `.npy`/`.npz` serialization. Decode audio output is the exception:
+writing WAV files still materializes host audio because `soundfile` writes CPU
+arrays.
+
 ## Direct Risks To Test
 
 - `[B,K,T]` versus `[B,T,K]` token layout.

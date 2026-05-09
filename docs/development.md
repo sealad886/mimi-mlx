@@ -128,9 +128,9 @@ Run benchmark entrypoints against the committed fixture WAVs:
 
 ```bash
 python scripts/benchmark_encode.py --weights fixtures/reference/hf \
-  --input-dir fixtures/audio --json
+  --input-dir fixtures/audio --prefetch-workers 2 --json
 python scripts/benchmark_decode.py --weights fixtures/reference/hf \
-  --input-dir fixtures/audio --json
+  --input-dir fixtures/audio --prefetch-workers 2 --json
 python scripts/benchmark_batching.py --weights fixtures/reference/hf \
   --input-dir fixtures/audio --batch-sizes 1,2,4,8 --json
 ```

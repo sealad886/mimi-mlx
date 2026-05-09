@@ -78,6 +78,16 @@ mimi-mlx decode /tmp/sine_440_tokens.npy \
   --json
 ```
 
+Encode a WAV directory with bounded CPU prefetch and MLX-native token saves:
+
+```bash
+mimi-mlx encode-dir fixtures/audio \
+  --weights fixtures/reference/hf \
+  --output-dir /tmp/mimi_tokens \
+  --prefetch-workers 2 \
+  --json
+```
+
 Run a reference parity check:
 
 ```bash
