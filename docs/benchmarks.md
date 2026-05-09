@@ -28,17 +28,19 @@ exposes a stable per-process memory counter on the target machines.
 
 ## Local Smoke Results
 
-Run on 2026-05-09 against the committed fixture WAVs:
+Run on 2026-05-09 against the committed fixture WAVs after MLX fast-path
+optimizations:
 
 | Command | Audio seconds | Elapsed seconds | Real-time factor |
 | --- | ---: | ---: | ---: |
-| encode | 4.0007 | 0.2283 | 0.0571 |
-| decode | 4.0007 | 0.5154 | 0.1288 |
+| encode | 4.0007 | 0.1166 | 0.0291 |
+| decode | 4.0007 | 0.2198 | 0.0549 |
 
 Batch encode smoke:
 
 | Batch size | Clip samples | Frames | Elapsed seconds |
 | ---: | ---: | ---: | ---: |
-| 1 | 6000 | 4 | 0.0526 |
-| 2 | 6000 | 4 | 0.0768 |
-| 4 | 6000 | 4 | 0.0974 |
+| 1 | 6000 | 4 | 0.0275 |
+| 2 | 6000 | 4 | 0.0130 |
+| 4 | 6000 | 4 | 0.0145 |
+| 8 | 6000 | 4 | 0.0235 |

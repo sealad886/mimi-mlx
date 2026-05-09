@@ -162,7 +162,12 @@ class MimiModel:
         if target_name.endswith(".weight"):
             module = self._resolve(target_name.removesuffix(".weight"))
             if isinstance(module, ConvTranspose1d):
-                mapped = value.transpose(1, 2, 0)
+                if module.groups == 1:
+                    mapped = value.transpose(1, 2, 0)
+                elif module.groups == module.in_channels == module.out_channels:
+                    mapped = value.transpose(0, 2, 1)
+                else:
+                    return False
             elif isinstance(module, Conv1d):
                 mapped = value.swapaxes(-1, -2)
             elif not hasattr(module, "weight"):

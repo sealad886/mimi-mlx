@@ -43,6 +43,16 @@ def causal_mask(length: int, dtype: mx.Dtype, sliding_window: int | None = None)
     return mx.where(mask, mx.array(-1e9, dtype=dtype), mx.array(0.0, dtype=dtype))
 
 
+def attention_mask(
+    length: int,
+    dtype: mx.Dtype,
+    sliding_window: int | None = None,
+) -> str | mx.array:
+    if sliding_window is None or sliding_window <= 0 or sliding_window >= length:
+        return "causal"
+    return causal_mask(length, dtype, sliding_window)
+
+
 def rotate_half(x: mx.array) -> mx.array:
     half = x.shape[-1] // 2
     return mx.concatenate([-x[..., half:], x[..., :half]], axis=-1)
@@ -104,34 +114,25 @@ class ConvTranspose1d:
     bias_enabled: bool = True
 
     def __post_init__(self) -> None:
+        if self.in_channels % self.groups != 0 or self.out_channels % self.groups != 0:
+            raise ValueError("ConvTranspose1d channels must be divisible by groups")
         self.weight = mx.zeros(
-            (self.out_channels // self.groups, self.kernel_size, self.in_channels),
+            (self.out_channels, self.kernel_size, self.in_channels // self.groups),
             dtype=mx.float32,
         )
         self.bias = mx.zeros((self.out_channels,), dtype=mx.float32) if self.bias_enabled else None
-        self._refresh_expanded_weight()
 
     def _refresh_expanded_weight(self) -> None:
-        if self.groups == self.in_channels == self.out_channels:
-            eye = mx.eye(self.out_channels, dtype=self.weight.dtype).reshape(
-                (self.out_channels, 1, self.out_channels)
-            )
-            eye = mx.repeat(eye, repeats=self.kernel_size, axis=1)
-            self._expanded_weight = mx.repeat(self.weight, repeats=self.groups, axis=0) * eye
-            self._expanded_groups = 1
-        elif self.groups == 1:
-            self._expanded_weight = self.weight
-            self._expanded_groups = 1
-        else:
+        if self.groups != 1 and self.groups != self.in_channels:
             raise ValueError("Grouped ConvTranspose1d only supports depthwise or groups=1")
 
     def __call__(self, x: mx.array) -> mx.array:
         self._refresh_expanded_weight()
         y = mx.conv_transpose1d(
             x.swapaxes(1, 2),
-            self._expanded_weight,
+            self.weight,
             stride=self.stride,
-            groups=self._expanded_groups,
+            groups=self.groups,
         ).swapaxes(1, 2)
         if self.bias is not None:
             y = y + self.bias[None, :, None]
@@ -342,16 +343,14 @@ class MimiAttention:
         )
         positions = mx.arange(length, dtype=mx.int32)
         q, k = apply_rope(q, k, base=self.config.rope_theta, positions=positions)
-        if self.num_key_value_groups != 1:
-            k = mx.repeat(k, repeats=self.num_key_value_groups, axis=1)
-            v = mx.repeat(v, repeats=self.num_key_value_groups, axis=1)
-        weights = (q @ k.swapaxes(-1, -2)) * self.scale
-        weights = (
-            weights
-            + causal_mask(length, weights.dtype, self.config.sliding_window)[None, None, :, :]
+        out = mx.fast.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            scale=self.scale,
+            mask=attention_mask(length, q.dtype, self.config.sliding_window),
         )
-        weights = mx.softmax(weights.astype(mx.float32), axis=-1).astype(x.dtype)
-        out = (weights @ v).swapaxes(1, 2).reshape(batch, length, self.num_heads * self.head_dim)
+        out = out.swapaxes(1, 2).reshape(batch, length, self.num_heads * self.head_dim)
         return self.o_proj(out)
 
 
@@ -364,9 +363,15 @@ class LinearWeights:
     def __post_init__(self) -> None:
         self.weight = mx.zeros((self.out_features, self.in_features), dtype=mx.float32)
         self.bias = mx.zeros((self.out_features,), dtype=mx.float32) if self.bias_enabled else None
+        self._weight_t: mx.array | None = None
+        self._weight_signature: int | None = None
 
     def __call__(self, x: mx.array) -> mx.array:
-        return linear(x, self.weight, self.bias)
+        signature = id(self.weight)
+        if self._weight_signature != signature:
+            self._weight_t = self.weight.T
+            self._weight_signature = signature
+        return x @ self._weight_t if self.bias is None else (x @ self._weight_t) + self.bias
 
 
 class MimiMLP:

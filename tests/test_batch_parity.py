@@ -27,6 +27,32 @@ def test_encode_batch_without_model_still_rejects_missing_model():
         tokenizer.encode_batch(mx.zeros((2, 24000)), lengths=None, sample_rate=24_000)
 
 
+def test_equal_explicit_lengths_are_encoded_as_one_batch():
+    class CountingModel:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.shapes = []
+
+        def encode(self, audio, *, num_codebooks=None):
+            self.calls += 1
+            self.shapes.append(audio.shape)
+            return mx.zeros((audio.shape[0], 2, 3), dtype=mx.int32)
+
+    model = CountingModel()
+    tokenizer = MimiTokenizer(config=MimiCodecConfig.default(), model=model)
+
+    tokens = tokenizer.encode_batch(
+        mx.zeros((2, 10), dtype=mx.float32),
+        lengths=mx.array([6, 6], dtype=mx.int32),
+        sample_rate=24_000,
+    )
+
+    assert model.calls == 1
+    assert model.shapes == [(2, 1, 6)]
+    assert tokens.codes.shape == (2, 3, 2)
+    assert np.array_equal(np.array(tokens.audio_lengths), np.array([6, 6], dtype=np.int32))
+
+
 def test_same_length_batch_tokens_match_individual_encode(tokenizer: MimiTokenizer):
     one, sample_rate = sf.read(ROOT / "fixtures/audio/sine_440_025s.wav", dtype="float32")
     two, _ = sf.read(ROOT / "fixtures/audio/noise_low_025s.wav", dtype="float32")

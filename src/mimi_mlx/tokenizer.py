@@ -103,8 +103,7 @@ class MimiTokenizer:
             raise ValueError(f"Expected lengths shape [{normalized.shape[0]}], got {lengths.shape}")
 
         host_lengths = np.array(lengths)
-        per_sample: list[mx.array] = []
-        frame_lengths: list[int] = []
+        groups: dict[int, list[int]] = {}
         for index, length in enumerate(host_lengths.tolist()):
             sample_length = int(length)
             if sample_length < 0 or sample_length > normalized.shape[-1]:
@@ -112,15 +111,23 @@ class MimiTokenizer:
                     f"Invalid audio length {sample_length} for sample {index}; "
                     f"padded length is {normalized.shape[-1]}"
                 )
-            sample_tokens = self.encode(
-                normalized[index : index + 1, :, :sample_length],
-                sample_rate=sample_rate,
-            )
-            per_sample.append(sample_tokens.codes[0])
-            frame_lengths.append(sample_tokens.codes.shape[1])
+            groups.setdefault(sample_length, []).append(index)
+
+        per_sample: list[mx.array | None] = [None] * normalized.shape[0]
+        frame_lengths = [0] * normalized.shape[0]
+        for sample_length, indices in groups.items():
+            group_audio = mx.take(normalized, mx.array(indices, dtype=mx.int32), axis=0)
+            sample_tokens = self.encode(group_audio[:, :, :sample_length], sample_rate=sample_rate)
+            for group_index, sample_index in enumerate(indices):
+                per_sample[sample_index] = sample_tokens.codes[group_index]
+                frame_lengths[sample_index] = sample_tokens.codes.shape[1]
 
         max_frames = max(frame_lengths, default=0)
-        padded = [mx.pad(codes, [(0, max_frames - codes.shape[0]), (0, 0)]) for codes in per_sample]
+        padded = []
+        for codes in per_sample:
+            if codes is None:
+                raise RuntimeError("Internal batching error left a sample unencoded")
+            padded.append(mx.pad(codes, [(0, max_frames - codes.shape[0]), (0, 0)]))
         codes = mx.stack(padded, axis=0) if padded else mx.zeros((0, 0, self.config.num_codebooks))
         return MimiTokens(
             codes=codes,

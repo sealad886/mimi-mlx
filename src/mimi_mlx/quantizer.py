@@ -98,17 +98,32 @@ class MimiEuclideanCodebook:
         self.initialized = mx.ones((1,), dtype=mx.float32)
         self.cluster_usage = mx.ones((codebook_size,), dtype=mx.float32)
         self.embed_sum = mx.zeros((codebook_size, codebook_dim), dtype=mx.float32)
+        self._embed_cache: mx.array | None = None
+        self._embed_norm_cache: mx.array | None = None
+        self._embed_signature: tuple[int, int] | None = None
 
     @property
     def embed(self) -> mx.array:
-        usage = mx.maximum(self.cluster_usage, self.epsilon)[:, None]
-        return self.embed_sum / usage
+        return self._refresh_embed_cache()[0]
+
+    @property
+    def embed_norm(self) -> mx.array:
+        return self._refresh_embed_cache()[1]
+
+    def _refresh_embed_cache(self) -> tuple[mx.array, mx.array]:
+        signature = (id(self.embed_sum), id(self.cluster_usage))
+        if self._embed_signature != signature:
+            usage = mx.maximum(self.cluster_usage, self.epsilon)[:, None]
+            self._embed_cache = self.embed_sum / usage
+            self._embed_norm_cache = mx.sum(mx.square(self._embed_cache), axis=-1) / 2
+            self._embed_signature = signature
+        return self._embed_cache, self._embed_norm_cache
 
     def encode(self, vectors: mx.array) -> mx.array:
         shape = vectors.shape[:-1]
         flat = vectors.reshape((-1, vectors.shape[-1]))
         embed = self.embed
-        scores = (mx.sum(mx.square(embed), axis=-1) / 2)[None, :] - flat @ embed.T
+        scores = self.embed_norm[None, :] - flat @ embed.T
         return mx.argmin(scores, axis=-1).reshape(shape)
 
     def decode(self, codes: mx.array) -> mx.array:
