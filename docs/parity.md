@@ -27,3 +27,10 @@ Files changed:
 - Packaging: `pyproject.toml`, `LICENSE`
 
 Next blocker: Stage 2 weight-name mapping from HF `model.safetensors` to standalone MLX module names.
+
+Stage 2 started:
+
+- Added safetensors header parser and sentinel HF Mimi tensor validation.
+- Added `scripts/inspect_weights.py`.
+- Added incomplete/mismatched checkpoint tests.
+- Full MLX module construction and complete tensor-by-tensor mapping remain blocked.

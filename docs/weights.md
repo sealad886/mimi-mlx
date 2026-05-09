@@ -38,3 +38,12 @@ Stage 2 must map HF/Transformers names to standalone MLX module names and valida
 - Conv-transpose weights require dedicated transpose handling.
 - Transformer layer norm, attention projection, output projection, MLP, and layer-scale names differ between HF, Kyutai PyTorch, and Kyutai MLX modules.
 - Missing, extra, or shape-mismatched tensors must fail loudly.
+
+## Implemented Validation Slice
+
+`mimi_mlx.weights.validate_hf_mimi_header` now validates a required sentinel set across
+encoder, decoder, transformer, downsample, upsample, and split-RVQ families. This is not
+the final full tensor mapping. It is an early guardrail for Stage 2 scripts and tests.
+
+`scripts/inspect_weights.py` reports JSON or human-readable manifest summaries and exits
+non-zero on missing or shape-mismatched required tensors.
