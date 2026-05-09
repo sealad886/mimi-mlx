@@ -34,6 +34,29 @@ HF_HUB_DISABLE_XET=1 hf download kyutai/mimi \
 
 `fixtures/reference/hf/` is intentionally ignored by git.
 
+For Rust reference parity, download the Moshi tokenizer checkpoint used by
+`rustymimi`:
+
+```bash
+RUSTYMIMI_WEIGHTS="$(python - <<'PY'
+from huggingface_hub import hf_hub_download
+print(hf_hub_download(
+    "kyutai/moshika-mlx-bf16",
+    "tokenizer-e351c8d8-checkpoint125.safetensors",
+))
+PY
+)"
+python -m mimi_mlx.cli parity fixtures/audio/sine_440_025s.wav \
+  --reference rustymimi \
+  --weights fixtures/reference/hf \
+  --reference-weights "$RUSTYMIMI_WEIGHTS" \
+  --json
+```
+
+`rustymimi` does not load the Hugging Face `kyutai/mimi/model.safetensors`
+file directly; it expects a Moshi tokenizer checkpoint with the Rust/Candle
+tensor names.
+
 ## Smoke Checks
 
 ```bash
@@ -49,6 +72,11 @@ python scripts/export_reference_fixtures.py --weights fixtures/reference/hf
 pytest -q
 python scripts/compare_reference.py fixtures/audio/sine_440_025s.wav \
   --weights fixtures/reference/hf --json
+python -m mimi_mlx.cli parity fixtures/audio/sine_440_025s.wav \
+  --reference rustymimi \
+  --weights fixtures/reference/hf \
+  --reference-weights "$RUSTYMIMI_WEIGHTS" \
+  --json
 ```
 
 ## API

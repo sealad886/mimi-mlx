@@ -19,6 +19,8 @@ The CLI exposes the same benchmark surface:
 ```bash
 mimi-mlx benchmark encode --weights fixtures/reference/hf \
   --input-dir fixtures/audio --json
+mimi-mlx benchmark batching --weights fixtures/reference/hf \
+  --input-dir fixtures/audio --batch-sizes 1,2,4,8 --json
 ```
 
 Current scripts do not yet report peak MLX memory. Add that as a follow-up once MLX

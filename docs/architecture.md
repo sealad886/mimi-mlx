@@ -6,6 +6,8 @@ Sources inspected:
 
 - Kyutai Moshi repository commit `6d14a61994f38b282ae75bc4e9c3dcc4d35e7183`.
 - Hugging Face model repository `kyutai/mimi` commit `89091b3e466eb6a9d11e537bf26b144f194978f7`.
+- Kyutai Moshi tokenizer checkpoint `tokenizer-e351c8d8-checkpoint125.safetensors`
+  from `kyutai/moshika-mlx-bf16` for `rustymimi` parity.
 - Hugging Face Transformers Mimi docs and current `modeling_mimi.py`.
 - Apple MLX 0.31 documentation for `Conv1d` and array loading.
 
@@ -33,6 +35,11 @@ Sources inspected:
 ## Implementation Boundary
 
 Production `mimi_mlx` encode/decode must be MLX-native and must not import PyTorch, `rustymimi`, `torchaudio`, or upstream Moshi code. Reference tooling may use those dependencies under the `reference` extra.
+
+`rustymimi` parity is a reference-only path. Its Python binding expects a
+Moshi tokenizer checkpoint, not the Hugging Face `kyutai/mimi/model.safetensors`
+file. The comparison uses full 32-codebook output and the upstream token layout
+`[batch, codebook, time]`.
 
 ## Direct Risks To Test
 

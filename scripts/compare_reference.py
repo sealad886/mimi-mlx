@@ -6,9 +6,15 @@ from mimi_mlx.cli import main as cli_main
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Compare MLX Mimi tokens with Transformers")
+    parser = argparse.ArgumentParser(description="Compare MLX Mimi tokens with a reference backend")
     parser.add_argument("input")
     parser.add_argument("--weights", required=True)
+    parser.add_argument(
+        "--reference",
+        choices=["rustymimi", "transformers"],
+        default="transformers",
+    )
+    parser.add_argument("--reference-weights")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -16,10 +22,12 @@ def main() -> int:
         "parity",
         args.input,
         "--reference",
-        "transformers",
+        args.reference,
         "--weights",
         args.weights,
     ]
+    if args.reference_weights:
+        argv.extend(["--reference-weights", args.reference_weights])
     if args.json:
         argv.append("--json")
     return cli_main(argv)

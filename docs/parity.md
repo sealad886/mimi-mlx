@@ -5,6 +5,8 @@
 Stages 0 through 8 are implemented for the current local fixture set.
 
 - Exact encode token parity: passing for all committed fixtures.
+- Exact Rust token parity: passing against `rustymimi` with the Kyutai
+  `tokenizer-e351c8d8-checkpoint125.safetensors` Moshi tokenizer checkpoint.
 - Decode waveform parity: passing for all committed fixtures with `max_abs < 2e-5` and `MSE < 1e-10`.
 - Batch parity: passing for same-length batch encode and variable-length encode with explicit `lengths`.
 - Padded variable-length inputs without `lengths` remain caller-unsafe and are documented as requiring explicit lengths.
@@ -13,10 +15,21 @@ Stages 0 through 8 are implemented for the current local fixture set.
 Verification:
 
 ```text
-.venv/bin/pytest -q                    # 43 passed
-.venv/bin/ruff check .                 # all checks passed
+.venv/bin/pytest -q                    # pass
+.venv/bin/ruff check .                 # pass
 .venv/bin/python -m mimi_mlx.cli --help # pass
+.venv/bin/python -m mimi_mlx.cli parity fixtures/audio/sine_440_025s.wav \
+  --reference rustymimi \
+  --weights fixtures/reference/hf \
+  --reference-weights "$RUSTYMIMI_WEIGHTS" \
+  --json                              # pass, "ok": true
 ```
+
+Rust parity uses `rustymimi.Tokenizer(..., num_codebooks=32)` and compares
+the Rust `[batch, codebook, time]` output directly against the MLX output after
+`mimi_mlx.layouts.to_upstream_layout`. The Rust checkpoint is separate from the
+Hugging Face `kyutai/mimi` checkpoint; the HF `model.safetensors` file lacks
+the Rust/Candle tensor names expected by `rustymimi`.
 
 Files changed:
 
