@@ -88,3 +88,118 @@ class SplitResidualVectorQuantizer:
         if self.acoustic is not None and codes.shape[-1] > semantic_count:
             quantized = quantized + self.acoustic.decode(codes[..., semantic_count:])
         return quantized
+
+
+class MimiEuclideanCodebook:
+    def __init__(self, codebook_size: int, codebook_dim: int, epsilon: float = 1e-5):
+        self.codebook_size = codebook_size
+        self.codebook_dim = codebook_dim
+        self.epsilon = epsilon
+        self.initialized = mx.ones((1,), dtype=mx.float32)
+        self.cluster_usage = mx.ones((codebook_size,), dtype=mx.float32)
+        self.embed_sum = mx.zeros((codebook_size, codebook_dim), dtype=mx.float32)
+
+    @property
+    def embed(self) -> mx.array:
+        usage = mx.maximum(self.cluster_usage, self.epsilon)[:, None]
+        return self.embed_sum / usage
+
+    def encode(self, vectors: mx.array) -> mx.array:
+        shape = vectors.shape[:-1]
+        flat = vectors.reshape((-1, vectors.shape[-1]))
+        embed = self.embed
+        scores = (mx.sum(mx.square(embed), axis=-1) / 2)[None, :] - flat @ embed.T
+        return mx.argmin(scores, axis=-1).reshape(shape)
+
+    def decode(self, codes: mx.array) -> mx.array:
+        return mx.take(self.embed, codes, axis=0)
+
+
+class MimiVectorQuantization:
+    def __init__(self, codebook_size: int, codebook_dim: int):
+        self.codebook = MimiEuclideanCodebook(codebook_size, codebook_dim)
+
+    def encode(self, hidden_states: mx.array) -> mx.array:
+        return self.codebook.encode(hidden_states.swapaxes(1, 2))
+
+    def decode(self, codes: mx.array) -> mx.array:
+        return self.codebook.decode(codes).swapaxes(1, 2)
+
+
+class MimiResidualVectorQuantizer:
+    def __init__(self, config, num_quantizers: int):
+        from .modules import Conv1d
+
+        self.layers = [
+            MimiVectorQuantization(config.codebook_size, config.codebook_dim)
+            for _ in range(num_quantizers)
+        ]
+        self.input_proj = None
+        self.output_proj = None
+        if config.codebook_dim != config.hidden_size:
+            self.input_proj = Conv1d(config.hidden_size, config.codebook_dim, 1, bias_enabled=False)
+            self.output_proj = Conv1d(
+                config.codebook_dim, config.hidden_size, 1, bias_enabled=False
+            )
+
+    def encode(self, embeddings: mx.array, num_quantizers: int | None = None) -> mx.array:
+        if self.input_proj is not None:
+            embeddings = self.input_proj(embeddings)
+        count = len(self.layers) if num_quantizers is None else num_quantizers
+        residual = embeddings
+        all_indices = []
+        for layer in self.layers[:count]:
+            indices = layer.encode(residual)
+            quantized = layer.decode(indices)
+            residual = residual - quantized
+            all_indices.append(indices)
+        return mx.stack(all_indices, axis=0)
+
+    def decode(self, codes: mx.array) -> mx.array:
+        codes = codes.swapaxes(0, 1)
+        quantized = self.layers[0].decode(codes[0])
+        for index, layer in enumerate(self.layers[1:], start=1):
+            if index >= codes.shape[0]:
+                break
+            quantized = quantized + layer.decode(codes[index])
+        if self.output_proj is not None:
+            quantized = self.output_proj(quantized)
+        return quantized
+
+
+class MimiSplitResidualVectorQuantizer:
+    def __init__(self, config):
+        self.max_num_quantizers = config.num_codebooks
+        self.num_semantic_quantizers = config.num_semantic_quantizers
+        self.num_acoustic_quantizers = config.num_codebooks - config.num_semantic_quantizers
+        self.semantic_residual_vector_quantizer = MimiResidualVectorQuantizer(
+            config, self.num_semantic_quantizers
+        )
+        self.acoustic_residual_vector_quantizer = MimiResidualVectorQuantizer(
+            config, self.num_acoustic_quantizers
+        )
+
+    def encode(self, embeddings: mx.array, num_quantizers: int | None = None) -> mx.array:
+        count = self.max_num_quantizers if num_quantizers is None else num_quantizers
+        if count > self.max_num_quantizers:
+            raise ValueError("Requested more quantizers than model supports")
+        if count < self.num_semantic_quantizers:
+            raise ValueError("Requested fewer quantizers than semantic quantizers")
+        codes = self.semantic_residual_vector_quantizer.encode(embeddings)
+        if count > self.num_semantic_quantizers:
+            acoustic = self.acoustic_residual_vector_quantizer.encode(
+                embeddings,
+                num_quantizers=count - self.num_semantic_quantizers,
+            )
+            codes = mx.concatenate([codes, acoustic], axis=0)
+        return codes
+
+    def decode(self, codes: mx.array) -> mx.array:
+        semantic = self.semantic_residual_vector_quantizer.decode(
+            codes[:, : self.num_semantic_quantizers]
+        )
+        if codes.shape[1] <= self.num_semantic_quantizers:
+            return semantic
+        return semantic + self.acoustic_residual_vector_quantizer.decode(
+            codes[:, self.num_semantic_quantizers :]
+        )

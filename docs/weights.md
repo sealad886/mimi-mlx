@@ -29,21 +29,31 @@ HF checkpoint tensor families observed from the safetensors header:
 | Latent downsample | `downsample.conv.weight` | `[512, 512, 4]` |
 | Latent upsample | `upsample.conv.weight` | `[512, 1, 4]` |
 
-## Mapping Work Still Required
+## MLX Mapping
 
-Stage 2 must map HF/Transformers names to standalone MLX module names and validate every tensor:
+`MimiModel.load_hf_weights` maps every tensor in `model.safetensors` and validates the
+post-conversion MLX shape before assignment.
 
-- `embed_sum` maps to MLX codebook `embedding_sum`.
+- Codebook `embed_sum`, `cluster_usage`, and `initialized` map directly to MLX codebook buffers.
 - PyTorch conv weights require `[out, in, kernel]` to MLX `[out, kernel, in]`.
-- Conv-transpose weights require dedicated transpose handling.
-- Transformer layer norm, attention projection, output projection, MLP, and layer-scale names differ between HF, Kyutai PyTorch, and Kyutai MLX modules.
-- Missing, extra, or shape-mismatched tensors must fail loudly.
+- Conv-transpose weights use `[in, out/groups, kernel]` to MLX `[out/groups, kernel, in]`.
+- Transformer linear, layer norm, MLP, and layer-scale weights map directly with no transpose.
+- Residual block list indices intentionally match HF `.block.1` and `.block.3`.
+- Missing, extra, disabled, or shape-mismatched tensors fail with `WeightLoadError`.
 
 ## Implemented Validation Slice
 
-`mimi_mlx.weights.validate_hf_mimi_header` now validates a required sentinel set across
-encoder, decoder, transformer, downsample, upsample, and split-RVQ families. This is not
-the final full tensor mapping. It is an early guardrail for Stage 2 scripts and tests.
+`mimi_mlx.weights.validate_hf_mimi_header` validates a required sentinel set across
+encoder, decoder, transformer, downsample, upsample, and split-RVQ families.
 
 `scripts/inspect_weights.py` reports JSON or human-readable manifest summaries and exits
 non-zero on missing or shape-mismatched required tensors.
+
+Local verification on 2026-05-09:
+
+```text
+fixtures/reference/hf/model.safetensors
+SHA256 bac7e85083dcded655d24eaadde7e6eea34c0da1b35fa2d284e641bd2b942a5e
+350 tensors
+96,151,393 parameters
+```

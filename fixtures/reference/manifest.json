@@ -1,0 +1,165 @@
+{
+  "fixtures": [
+    {
+      "audio_path": "fixtures/audio/silence_025s.wav",
+      "audio_sha256": "8403292d951973b2ee10d5534e271d5a58df3f077064276d7212297a1409eb60",
+      "codes_shape": [
+        1,
+        32,
+        4
+      ],
+      "duration_seconds": 0.25,
+      "id": "silence_025s",
+      "layout": "batch_codebook_time",
+      "reconstruction_path": "fixtures/reference/silence_025s.recon.npy",
+      "reconstruction_sha256": "f3eec6dae18e82e6b771a3618e068b6bad23070b16f973ab549da10007465cac",
+      "sample_rate": 24000,
+      "tokens_path": "fixtures/reference/silence_025s.tokens.npy",
+      "tokens_sha256": "2f0daa08aa0fc2a68f5aa43518c4075243cb7507378e5ffdce49a3303bf5b3be"
+    },
+    {
+      "audio_path": "fixtures/audio/sine_440_025s.wav",
+      "audio_sha256": "34fd3e904f3fc2dc307d547ab52995920991f1047142780b43fee9c79756c418",
+      "codes_shape": [
+        1,
+        32,
+        4
+      ],
+      "duration_seconds": 0.25,
+      "id": "sine_440_025s",
+      "layout": "batch_codebook_time",
+      "reconstruction_path": "fixtures/reference/sine_440_025s.recon.npy",
+      "reconstruction_sha256": "3c1d1bf0d6ff807cedcf9c634313d79ddf610e18f210c9d2da52ef27cf1a6587",
+      "sample_rate": 24000,
+      "tokens_path": "fixtures/reference/sine_440_025s.tokens.npy",
+      "tokens_sha256": "09bc414fd94b08ce3099e3ed907e03e5315a65966dfe5239f781e504ea88702c"
+    },
+    {
+      "audio_path": "fixtures/audio/sine_440_100s.wav",
+      "audio_sha256": "282f786e18de096d0eee5bdfa8ebbde3146780f5ef115a184ebc12beff2d5ce5",
+      "codes_shape": [
+        1,
+        32,
+        13
+      ],
+      "duration_seconds": 1.0,
+      "id": "sine_440_100s",
+      "layout": "batch_codebook_time",
+      "reconstruction_path": "fixtures/reference/sine_440_100s.recon.npy",
+      "reconstruction_sha256": "d46fd5141249e7858725dac3ee20dbd9f66d7b670e1308a2ec36438bc06bcbb8",
+      "sample_rate": 24000,
+      "tokens_path": "fixtures/reference/sine_440_100s.tokens.npy",
+      "tokens_sha256": "635032a61a8070bac9da7704d1c8a1aa153d207d4a6ee9c5a06495bf983e9ad1"
+    },
+    {
+      "audio_path": "fixtures/audio/impulse_center_025s.wav",
+      "audio_sha256": "39138e788868ca3b3c548765aa33bc28c24182adb9e7559b91d301a6912471d0",
+      "codes_shape": [
+        1,
+        32,
+        4
+      ],
+      "duration_seconds": 0.25,
+      "id": "impulse_center_025s",
+      "layout": "batch_codebook_time",
+      "reconstruction_path": "fixtures/reference/impulse_center_025s.recon.npy",
+      "reconstruction_sha256": "fe28bd7ccd2ba0e09b297a5dba6edde90b90326350826e5aeae7c22d220aa8dd",
+      "sample_rate": 24000,
+      "tokens_path": "fixtures/reference/impulse_center_025s.tokens.npy",
+      "tokens_sha256": "aab0e962dbe678ceb51a6729c54a823dc1622a23daf09bccdeb0d485e5f4bf6b"
+    },
+    {
+      "audio_path": "fixtures/audio/noise_low_025s.wav",
+      "audio_sha256": "f1fccc6278075ee4c06c1a9a5fc685b96ba889c2515cc0495ce26cc231fa140e",
+      "codes_shape": [
+        1,
+        32,
+        4
+      ],
+      "duration_seconds": 0.25,
+      "id": "noise_low_025s",
+      "layout": "batch_codebook_time",
+      "reconstruction_path": "fixtures/reference/noise_low_025s.recon.npy",
+      "reconstruction_sha256": "751abd0e9692f011d67c0f0145ef6b844d56e299cf33293f3ac72f0e41270ce9",
+      "sample_rate": 24000,
+      "tokens_path": "fixtures/reference/noise_low_025s.tokens.npy",
+      "tokens_sha256": "d94de5c8a957a9f8df55db16aa31b2c8830c9ea31e6ff6bfa3806084d328a4c1"
+    },
+    {
+      "audio_path": "fixtures/audio/clipped_025s.wav",
+      "audio_sha256": "d397ad11cfa0893302a76216e8f500eaa4a3ae2a2a5cd660e14223e84bfa38f9",
+      "codes_shape": [
+        1,
+        32,
+        4
+      ],
+      "duration_seconds": 0.25,
+      "id": "clipped_025s",
+      "layout": "batch_codebook_time",
+      "reconstruction_path": "fixtures/reference/clipped_025s.recon.npy",
+      "reconstruction_sha256": "a8dc0594ae14350e6ef2f32fc83abeaf5d4669c726a91a5f4f0cbd9e661a6775",
+      "sample_rate": 24000,
+      "tokens_path": "fixtures/reference/clipped_025s.tokens.npy",
+      "tokens_sha256": "d9c7163894ae2d3847785f98fa5b05976e1ab5fa6d6fbe4e30c56aa3866715c8"
+    },
+    {
+      "audio_path": "fixtures/audio/odd_length_6017.wav",
+      "audio_sha256": "6670e162360f82b02e0600e1ad4cdf3f48ee367c6c8c4f4b52e3dfb7b45605c4",
+      "codes_shape": [
+        1,
+        32,
+        4
+      ],
+      "duration_seconds": 0.2507083333333333,
+      "id": "odd_length_6017",
+      "layout": "batch_codebook_time",
+      "reconstruction_path": "fixtures/reference/odd_length_6017.recon.npy",
+      "reconstruction_sha256": "f962ba03d1dec685320a00c2bdfc0d3184a52d470bb55269a8779f143e939719",
+      "sample_rate": 24000,
+      "tokens_path": "fixtures/reference/odd_length_6017.tokens.npy",
+      "tokens_sha256": "5c5b6043be92deb405a56043d7216f073cdb969292fc1b249dcbcd22e520e5de"
+    },
+    {
+      "audio_path": "fixtures/audio/synthetic_speech_like_050s.wav",
+      "audio_sha256": "204605336888680d6db6f69cf0a5a61388d4ba06b2075bc374eb9b0ec7e99a7f",
+      "codes_shape": [
+        1,
+        32,
+        7
+      ],
+      "duration_seconds": 0.5,
+      "id": "synthetic_speech_like_050s",
+      "layout": "batch_codebook_time",
+      "reconstruction_path": "fixtures/reference/synthetic_speech_like_050s.recon.npy",
+      "reconstruction_sha256": "f17a250f96e46d2461fc5ed5615b8e0c01713a1c83493a299d05341bcf4748dd",
+      "sample_rate": 24000,
+      "tokens_path": "fixtures/reference/synthetic_speech_like_050s.tokens.npy",
+      "tokens_sha256": "7f85340062046fddadcda563e13532b44fa124b7e744bfa8e43218698d9445af"
+    },
+    {
+      "audio_path": "fixtures/audio/real_speech_librispeech_100s.wav",
+      "audio_sha256": "d5158cd39c283fe9c4144a7c467970e1fb1fcf6831f040eee0377b4e5e1a7f1f",
+      "codes_shape": [
+        1,
+        32,
+        13
+      ],
+      "duration_seconds": 1.0,
+      "id": "real_speech_librispeech_100s",
+      "layout": "batch_codebook_time",
+      "reconstruction_path": "fixtures/reference/real_speech_librispeech_100s.recon.npy",
+      "reconstruction_sha256": "1ed767504e093b00e5974b90e22b4f790b3725e1e13e1f51c40b8b2ca3c18a17",
+      "sample_rate": 24000,
+      "tokens_path": "fixtures/reference/real_speech_librispeech_100s.tokens.npy",
+      "tokens_sha256": "c8eb52893082ef962c4b3b37b621d5faac3f6126ec33b5bddc9446b8ed1c54d2"
+    }
+  ],
+  "schema_version": 1,
+  "upstream": {
+    "name": "transformers.MimiModel",
+    "repo": "kyutai/mimi",
+    "revision": "89091b3e466eb6a9d11e537bf26b144f194978f7",
+    "token_layout": "batch_codebook_time",
+    "weights_sha256": "bac7e85083dcded655d24eaadde7e6eea34c0da1b35fa2d284e641bd2b942a5e"
+  }
+}

@@ -1,19 +1,29 @@
 # Fixtures
 
-Committed fixtures must be small and license-safe. Larger assets should be generated or downloaded
-by scripts with explicit user action.
+Committed fixtures are small deterministic WAV files plus golden Mimi token outputs from
+`transformers.MimiModel` using the official `kyutai/mimi` weights.
 
-Planned fixture manifest:
+`real_speech_librispeech_100s` is extracted from
+`hf-internal-testing/librispeech_asr_dummy`, downloaded into ignored `fixtures/source/`
+with the Hugging Face CLI and resampled to 24 kHz before reference token export.
 
-```json
-{
-  "schema_version": 1,
-  "upstream": {
-    "name": "mimi",
-    "repo": "kyutai/mimi",
-    "revision": "89091b3e466eb6a9d11e537bf26b144f194978f7",
-    "weights_sha256": "bac7e85083dcded655d24eaadde7e6eea34c0da1b35fa2d284e641bd2b942a5e"
-  },
-  "fixtures": []
-}
+The fixture manifest is `fixtures/reference/manifest.json`. It records:
+
+- upstream implementation and revision,
+- official weight SHA256,
+- audio path and checksum,
+- token path and checksum,
+- reconstruction path and checksum,
+- upstream layout (`batch_codebook_time`).
+
+Regenerate fixtures after changing the reference implementation or fixture audio:
+
+```bash
+python scripts/export_reference_fixtures.py --weights fixtures/reference/hf
+```
+
+The official weights are not committed. Download them with:
+
+```bash
+python scripts/download_reference_assets.py
 ```

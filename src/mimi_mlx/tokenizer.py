@@ -5,10 +5,12 @@ from pathlib import Path
 
 import mlx.core as mx
 import numpy as np
+from huggingface_hub import hf_hub_download
 
 from .audio import normalize_audio_shape
 from .config import MimiCodecConfig
-from .layouts import CANONICAL_LAYOUT, validate_layout
+from .layouts import CANONICAL_LAYOUT, from_upstream_layout, to_upstream_layout, validate_layout
+from .model import MimiModel, MimiModelConfig
 
 
 @dataclass(frozen=True)
@@ -25,8 +27,9 @@ class MimiTokens:
 
 
 class MimiTokenizer:
-    def __init__(self, config: MimiCodecConfig | None = None):
+    def __init__(self, config: MimiCodecConfig | None = None, model: MimiModel | None = None):
         self.config = config or MimiCodecConfig.default()
+        self.model = model
 
     @classmethod
     def from_pretrained(
@@ -37,21 +40,51 @@ class MimiTokenizer:
         revision: str | None = None,
     ) -> MimiTokenizer:
         resolved = config or MimiCodecConfig.from_pretrained(pretrained, revision=revision)
-        return cls(config=resolved)
+        model_config = MimiModelConfig.from_hf_config(
+            _load_hf_config(pretrained, revision=revision)
+        )
+        model = MimiModel(model_config)
+        model.load_hf_weights(_resolve_weights_path(pretrained, revision=revision))
+        return cls(config=resolved, model=model)
 
     def reset_state(self) -> None:
-        return None
+        if self.model is not None:
+            self.model.reset_state()
 
     def encode(self, audio: mx.array, *, sample_rate: int) -> MimiTokens:
-        normalize_audio_shape(audio, channels=self.config.channels)
-        raise NotImplementedError(
-            "MLX Mimi model is not implemented yet; encode lands in Stage 4/5"
+        if self.model is None:
+            raise NotImplementedError("MLX Mimi model is not loaded")
+        normalized, audio_lengths = normalize_audio_shape(audio, channels=self.config.channels)
+        if sample_rate != self.config.sample_rate:
+            from .audio import resample_linear
+
+            normalized = resample_linear(
+                normalized,
+                src_rate=sample_rate,
+                dst_rate=self.config.sample_rate,
+            )
+        upstream = self.model.encode(normalized)
+        codes = from_upstream_layout(upstream)
+        lengths = mx.full((codes.shape[0],), codes.shape[1], dtype=mx.int32)
+        return MimiTokens(
+            codes=codes,
+            lengths=lengths,
+            sample_rate=self.config.sample_rate,
+            frame_rate=self.config.frame_rate,
+            audio_lengths=audio_lengths,
         )
 
     def decode(self, codes: mx.array, *, sample_rate: int) -> mx.array:
+        if self.model is None:
+            raise NotImplementedError("MLX Mimi model is not loaded")
         if codes.ndim != 3:
             raise ValueError(f"Expected canonical token shape [B,T,K], got {codes.shape}")
-        raise NotImplementedError("MLX Mimi model is not implemented yet; decode lands in Stage 6")
+        audio = self.model.decode(to_upstream_layout(codes))
+        if sample_rate != self.config.sample_rate:
+            from .audio import resample_linear
+
+            audio = resample_linear(audio, src_rate=self.config.sample_rate, dst_rate=sample_rate)
+        return audio
 
     def encode_batch(
         self,
@@ -60,11 +93,42 @@ class MimiTokenizer:
         lengths: mx.array | None = None,
         sample_rate: int,
     ) -> MimiTokens:
-        if lengths is None and audio.ndim >= 2 and audio.shape[0] > 1:
-            raise ValueError(
-                "lengths are required for batch encode until padded-prefix parity is proven"
+        if lengths is None:
+            return self.encode(audio, sample_rate=sample_rate)
+
+        if self.model is None:
+            raise NotImplementedError("MLX Mimi model is not loaded")
+        normalized, _ = normalize_audio_shape(audio, channels=self.config.channels)
+        if lengths.ndim != 1 or lengths.shape[0] != normalized.shape[0]:
+            raise ValueError(f"Expected lengths shape [{normalized.shape[0]}], got {lengths.shape}")
+
+        host_lengths = np.array(lengths)
+        per_sample: list[mx.array] = []
+        frame_lengths: list[int] = []
+        for index, length in enumerate(host_lengths.tolist()):
+            sample_length = int(length)
+            if sample_length < 0 or sample_length > normalized.shape[-1]:
+                raise ValueError(
+                    f"Invalid audio length {sample_length} for sample {index}; "
+                    f"padded length is {normalized.shape[-1]}"
+                )
+            sample_tokens = self.encode(
+                normalized[index : index + 1, :, :sample_length],
+                sample_rate=sample_rate,
             )
-        return self.encode(audio, sample_rate=sample_rate)
+            per_sample.append(sample_tokens.codes[0])
+            frame_lengths.append(sample_tokens.codes.shape[1])
+
+        max_frames = max(frame_lengths, default=0)
+        padded = [mx.pad(codes, [(0, max_frames - codes.shape[0]), (0, 0)]) for codes in per_sample]
+        codes = mx.stack(padded, axis=0) if padded else mx.zeros((0, 0, self.config.num_codebooks))
+        return MimiTokens(
+            codes=codes,
+            lengths=mx.array(frame_lengths, dtype=mx.int32),
+            sample_rate=self.config.sample_rate,
+            frame_rate=self.config.frame_rate,
+            audio_lengths=mx.array(host_lengths, dtype=mx.int32),
+        )
 
     @staticmethod
     def save_tokens_npz(path: str | Path, tokens: MimiTokens) -> None:
@@ -124,3 +188,25 @@ def load_tokens_npy(path: str | Path, *, sample_rate: int, frame_rate: float) ->
         raise ValueError(f"Expected saved codes with shape [B,T,K], got {codes.shape}")
     lengths = mx.full((codes.shape[0],), codes.shape[1], dtype=mx.int32)
     return MimiTokens(codes=codes, lengths=lengths, sample_rate=sample_rate, frame_rate=frame_rate)
+
+
+def _resolve_weights_path(pretrained: str | Path, *, revision: str | None) -> Path:
+    path = Path(pretrained)
+    if path.is_dir():
+        return path / "model.safetensors"
+    if path.is_file():
+        return path
+    return Path(hf_hub_download(str(pretrained), "model.safetensors", revision=revision))
+
+
+def _load_hf_config(pretrained: str | Path, *, revision: str | None) -> dict:
+    import json
+
+    path = Path(pretrained)
+    if path.is_dir():
+        config_path = path / "config.json"
+    elif path.is_file():
+        config_path = path.with_name("config.json")
+    else:
+        config_path = Path(hf_hub_download(str(pretrained), "config.json", revision=revision))
+    return json.loads(config_path.read_text())
