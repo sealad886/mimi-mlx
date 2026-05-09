@@ -1,5 +1,8 @@
 # Benchmarks
 
+See `docs/development.md` for when to refresh benchmark notes during
+development.
+
 Benchmark entrypoints are runnable and emit machine-readable JSON with elapsed time,
 audio seconds, real-time factor, and token-frame counts.
 

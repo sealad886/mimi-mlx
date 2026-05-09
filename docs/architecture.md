@@ -2,6 +2,9 @@
 
 Research date: 2026-05-09.
 
+For operational setup and commands, see `docs/usage.md`. For the local
+contributor workflow, see `docs/development.md`.
+
 Sources inspected:
 
 - Kyutai Moshi repository commit `6d14a61994f38b282ae75bc4e9c3dcc4d35e7183`.
