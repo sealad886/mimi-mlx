@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mimi-mlx"
+version = "0.1.0"
+description = "MLX-native Kyutai Mimi audio codec tokenization and reconstruction"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = "MIT"
+authors = [{ name = "mimi-mlx contributors" }]
+dependencies = [
+  "huggingface-hub>=0.36",
+  "mlx>=0.31",
+  "numpy>=2.0",
+  "soundfile>=0.13",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0",
+  "ruff>=0.14",
+]
+reference = [
+  "datasets[audio]>=4.0",
+  "rustymimi>=0.4",
+  "safetensors>=0.7",
+  "torch>=2.9",
+  "transformers>=4.57",
+]
+
+[project.scripts]
+mimi-mlx = "mimi_mlx.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mimi_mlx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
