@@ -184,9 +184,11 @@ def test_encode_directory_converts_audio_once_and_saves_mlx_tokens(
     output_dir = tmp_path / "tokens"
     input_dir.mkdir()
     first = input_dir / "first.wav"
-    second = input_dir / "second.wav"
+    second = input_dir / "second.WAV"
+    ignored_directory = input_dir / "nested.wav"
     first.write_bytes(b"fake")
     second.write_bytes(b"fake")
+    ignored_directory.mkdir()
     reads: list[Path] = []
     encoded_shapes: list[tuple[int, ...]] = []
     saved: list[tuple[Path, mx.array]] = []

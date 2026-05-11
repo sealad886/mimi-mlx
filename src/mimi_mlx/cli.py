@@ -241,6 +241,12 @@ def _audio_seconds(audio: np.ndarray, sample_rate: int) -> float:
     return samples / sample_rate
 
 
+def _find_wav_files(input_dir: Path) -> list[Path]:
+    return sorted(
+        path for path in input_dir.iterdir() if path.is_file() and path.suffix.lower() == ".wav"
+    )
+
+
 def _encode_directory(
     tokenizer: MimiTokenizer,
     input_dir: Path,
@@ -249,7 +255,7 @@ def _encode_directory(
     sample_rate: int | None,
     prefetch_workers: int,
 ) -> dict[str, object]:
-    clips = sorted(input_dir.glob("*.wav"))
+    clips = _find_wav_files(input_dir)
     if not clips:
         raise SystemExit(f"No .wav files found under {input_dir}")
 
@@ -353,7 +359,7 @@ def _benchmark_command(args: argparse.Namespace) -> int:
     if args.benchmark_command == "batching":
         return _benchmark_batching(tokenizer, args)
 
-    clips = sorted(Path(args.input_dir).glob("*.wav"))
+    clips = _find_wav_files(Path(args.input_dir))
     if not clips:
         raise SystemExit(f"No .wav files found under {args.input_dir}")
 
@@ -425,7 +431,7 @@ def _parse_batch_sizes(batch_sizes: str) -> list[int]:
 
 def _load_same_rate_clips(input_dir: Path) -> list[tuple[np.ndarray, int]]:
     clips = []
-    for path in sorted(input_dir.glob("*.wav")):
+    for path in _find_wav_files(input_dir):
         audio, sample_rate = sf.read(path, dtype="float32", always_2d=False)
         if audio.ndim != 1:
             audio = audio[:, 0]
