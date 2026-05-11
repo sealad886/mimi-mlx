@@ -245,6 +245,8 @@ def _token_frame_count(codes: mx.array) -> int:
 
 
 def _find_wav_files(input_dir: Path) -> list[Path]:
+    if not input_dir.is_dir():
+        raise SystemExit(f"Input path must be a directory: {input_dir}")
     return sorted(
         path for path in input_dir.iterdir() if path.is_file() and path.suffix.lower() == ".wav"
     )
@@ -435,9 +437,7 @@ def _parse_batch_sizes(batch_sizes: str) -> list[int]:
 def _load_same_rate_clips(input_dir: Path) -> list[tuple[np.ndarray, int]]:
     clips = []
     for path in _find_wav_files(input_dir):
-        audio, sample_rate = sf.read(path, dtype="float32", always_2d=False)
-        if audio.ndim != 1:
-            audio = audio[:, 0]
+        audio, sample_rate = _read_audio(path)
         clips.append((audio, sample_rate))
     if not clips:
         raise SystemExit(f"No .wav files found under {input_dir}")
@@ -456,9 +456,17 @@ def _load_tokenizer(weights: str) -> MimiTokenizer:
 
 def _read_audio(path: str | Path, *, sample_rate: int | None = None) -> tuple[np.ndarray, int]:
     audio, detected_rate = sf.read(path, dtype="float32", always_2d=False)
+    if sample_rate is not None and sample_rate != detected_rate:
+        raise SystemExit(
+            f"--sample-rate {sample_rate} does not match detected WAV rate "
+            f"{detected_rate} for {path}"
+        )
     if audio.ndim == 2:
-        audio = audio.T
-    return audio, sample_rate or detected_rate
+        channels = audio.shape[1]
+        if channels != 1:
+            raise SystemExit(f"Expected mono WAV input, got {channels} channels in {path}")
+        audio = audio[:, 0]
+    return audio, detected_rate
 
 
 def _emit(payload: dict[str, object], *, as_json: bool) -> None:

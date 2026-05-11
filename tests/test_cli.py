@@ -32,6 +32,44 @@ def test_cli_help_runs():
     assert "benchmark" in result.stdout
 
 
+def test_read_audio_rejects_sample_rate_mismatch(monkeypatch: pytest.MonkeyPatch):
+    from mimi_mlx import cli
+
+    def fake_read(path: str | Path, *, dtype: str, always_2d: bool):
+        assert dtype == "float32"
+        assert always_2d is False
+        return np.zeros(16, dtype=np.float32), 16_000
+
+    monkeypatch.setattr(cli.sf, "read", fake_read)
+
+    with pytest.raises(SystemExit, match="--sample-rate 24000 does not match detected WAV rate"):
+        cli._read_audio("clip.wav", sample_rate=24_000)
+
+
+def test_read_audio_rejects_non_mono_wav(monkeypatch: pytest.MonkeyPatch):
+    from mimi_mlx import cli
+
+    def fake_read(path: str | Path, *, dtype: str, always_2d: bool):
+        assert dtype == "float32"
+        assert always_2d is False
+        return np.zeros((16, 2), dtype=np.float32), 24_000
+
+    monkeypatch.setattr(cli.sf, "read", fake_read)
+
+    with pytest.raises(SystemExit, match="Expected mono WAV input, got 2 channels"):
+        cli._read_audio("stereo.wav")
+
+
+def test_wav_discovery_rejects_non_directory(tmp_path: Path):
+    from mimi_mlx import cli
+
+    not_directory = tmp_path / "clip.wav"
+    not_directory.write_bytes(b"fake")
+
+    with pytest.raises(SystemExit, match="Input path must be a directory"):
+        cli._find_wav_files(not_directory)
+
+
 @pytest.mark.skipif(
     not (LOCAL_WEIGHTS / "model.safetensors").exists(),
     reason="official Mimi weights are not present under fixtures/reference/hf",
