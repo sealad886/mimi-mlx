@@ -230,6 +230,15 @@ def test_encode_directory_converts_audio_once_and_saves_mlx_tokens(
     assert payload["outputs"] == [str(output_dir / "first.npy"), str(output_dir / "second.npy")]
 
 
+def test_metric_helpers_count_batched_audio_and_tokens():
+    from mimi_mlx import cli
+
+    assert cli._audio_seconds(np.zeros(16, dtype=np.float32), 8) == 2.0
+    assert cli._audio_seconds(np.zeros((2, 16), dtype=np.float32), 8) == 4.0
+    assert cli._audio_seconds(np.zeros((2, 1, 16), dtype=np.float32), 8) == 4.0
+    assert cli._token_frame_count(mx.zeros((3, 5, 32), dtype=mx.int32)) == 15
+
+
 def test_prefetched_audio_uses_bounded_thread_executor(monkeypatch: pytest.MonkeyPatch):
     from mimi_mlx import cli
 

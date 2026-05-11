@@ -237,8 +237,11 @@ def _iter_prefetched_audio(
 
 
 def _audio_seconds(audio: np.ndarray, sample_rate: int) -> float:
-    samples = audio.shape[-1] if audio.ndim > 1 else audio.shape[0]
-    return samples / sample_rate
+    return audio.size / sample_rate
+
+
+def _token_frame_count(codes: mx.array) -> int:
+    return int(codes.shape[0] * codes.shape[1])
 
 
 def _find_wav_files(input_dir: Path) -> list[Path]:
@@ -271,7 +274,7 @@ def _encode_directory(
         output_path = output_dir / f"{clip.path.stem}.npy"
         MimiTokenizer.save_tokens_npy(output_path, tokens.codes)
         outputs.append(str(output_path))
-        token_frames += int(tokens.codes.shape[1])
+        token_frames += _token_frame_count(tokens.codes)
         total_seconds += _audio_seconds(clip.audio, clip.sample_rate)
 
     elapsed = time.perf_counter() - start
@@ -373,11 +376,11 @@ def _benchmark_command(args: argparse.Namespace) -> int:
             tokens = tokenizer.encode(mx.array(clip.audio), sample_rate=clip.sample_rate)
             decoded = tokenizer.decode(tokens.codes, sample_rate=clip.sample_rate)
             mx.eval(decoded)
-            token_frames += int(tokens.codes.shape[1])
+            token_frames += _token_frame_count(tokens.codes)
         else:
             tokens = tokenizer.encode(mx.array(clip.audio), sample_rate=clip.sample_rate)
             mx.eval(tokens.codes)
-            token_frames += int(tokens.codes.shape[1])
+            token_frames += _token_frame_count(tokens.codes)
         total_seconds += _audio_seconds(clip.audio, clip.sample_rate)
     elapsed = time.perf_counter() - start
     payload = {
