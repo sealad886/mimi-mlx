@@ -329,6 +329,11 @@ def _resolve_rustymimi_reference_weights(reference_weights: str | None) -> Path:
         )
     if not path.exists():
         raise SystemExit(f"rustymimi reference weights do not exist: {path}")
+    if not (path.name.startswith("tokenizer-") and path.suffix == ".safetensors"):
+        raise SystemExit(
+            "rustymimi reference weights must be a Moshi tokenizer-*.safetensors "
+            f"checkpoint, got {path.name}"
+        )
     return path
 
 
@@ -367,22 +372,59 @@ def _benchmark_command(args: argparse.Namespace) -> int:
     clips = _find_wav_files(Path(args.input_dir))
     if not clips:
         raise SystemExit(f"No .wav files found under {args.input_dir}")
+    warmup_clip = _load_audio_clip(clips[0], sample_rate=None)
 
+    if args.benchmark_command == "decode":
+        prepared = []
+        for clip in _iter_prefetched_audio(
+            clips, sample_rate=None, prefetch_workers=args.prefetch_workers
+        ):
+            tokens = tokenizer.encode(mx.array(clip.audio), sample_rate=clip.sample_rate)
+            mx.eval(tokens.codes)
+            prepared.append((clip, tokens.codes))
+        warmup_tokens = tokenizer.encode(
+            mx.array(warmup_clip.audio), sample_rate=warmup_clip.sample_rate
+        )
+        warmup_decoded = tokenizer.decode(warmup_tokens.codes, sample_rate=warmup_clip.sample_rate)
+        mx.eval(warmup_decoded)
+        mx.reset_peak_memory()
+        start = time.perf_counter()
+        total_seconds = 0.0
+        token_frames = 0
+        for clip, codes in prepared:
+            decoded = tokenizer.decode(codes, sample_rate=clip.sample_rate)
+            mx.eval(decoded)
+            token_frames += _token_frame_count(codes)
+            total_seconds += _audio_seconds(clip.audio, clip.sample_rate)
+        elapsed = time.perf_counter() - start
+        payload = {
+            "command": "benchmark decode",
+            "clips": len(prepared),
+            "audio_seconds": total_seconds,
+            "elapsed_seconds": elapsed,
+            "real_time_factor": elapsed / total_seconds if total_seconds else None,
+            "token_frames": token_frames,
+            "prefetch_workers": args.prefetch_workers,
+            "peak_memory_bytes": mx.get_peak_memory(),
+        }
+        _emit(payload, as_json=args.json)
+        return 0
+
+    warmup_tokens = tokenizer.encode(
+        mx.array(warmup_clip.audio),
+        sample_rate=warmup_clip.sample_rate,
+    )
+    mx.eval(warmup_tokens.codes)
+    mx.reset_peak_memory()
     start = time.perf_counter()
     total_seconds = 0.0
     token_frames = 0
     for clip in _iter_prefetched_audio(
         clips, sample_rate=None, prefetch_workers=args.prefetch_workers
     ):
-        if args.benchmark_command == "decode":
-            tokens = tokenizer.encode(mx.array(clip.audio), sample_rate=clip.sample_rate)
-            decoded = tokenizer.decode(tokens.codes, sample_rate=clip.sample_rate)
-            mx.eval(decoded)
-            token_frames += _token_frame_count(tokens.codes)
-        else:
-            tokens = tokenizer.encode(mx.array(clip.audio), sample_rate=clip.sample_rate)
-            mx.eval(tokens.codes)
-            token_frames += _token_frame_count(tokens.codes)
+        tokens = tokenizer.encode(mx.array(clip.audio), sample_rate=clip.sample_rate)
+        mx.eval(tokens.codes)
+        token_frames += _token_frame_count(tokens.codes)
         total_seconds += _audio_seconds(clip.audio, clip.sample_rate)
     elapsed = time.perf_counter() - start
     payload = {
@@ -393,6 +435,7 @@ def _benchmark_command(args: argparse.Namespace) -> int:
         "real_time_factor": elapsed / total_seconds if total_seconds else None,
         "token_frames": token_frames,
         "prefetch_workers": args.prefetch_workers,
+        "peak_memory_bytes": mx.get_peak_memory(),
     }
     _emit(payload, as_json=args.json)
     return 0
@@ -407,6 +450,9 @@ def _benchmark_batching(tokenizer: MimiTokenizer, args: argparse.Namespace) -> i
         min_length = min(audio.shape[0] for audio, _ in selected)
         batch = mx.stack([mx.array(audio[:min_length]) for audio, _ in selected], axis=0)
         sample_rate = selected[0][1]
+        warmup_tokens = tokenizer.encode_batch(batch, sample_rate=sample_rate)
+        mx.eval(warmup_tokens.codes)
+        mx.reset_peak_memory()
         start = time.perf_counter()
         tokens = tokenizer.encode_batch(batch, sample_rate=sample_rate)
         mx.eval(tokens.codes)
@@ -417,6 +463,7 @@ def _benchmark_batching(tokenizer: MimiTokenizer, args: argparse.Namespace) -> i
                 "samples_per_clip": min_length,
                 "frames": int(tokens.codes.shape[1]),
                 "elapsed_seconds": elapsed,
+                "peak_memory_bytes": mx.get_peak_memory(),
             }
         )
     payload = {"command": "benchmark batching", "results": results}
@@ -475,6 +522,16 @@ def _emit(payload: dict[str, object], *, as_json: bool) -> None:
     else:
         status = "ok" if payload.get("ok", True) else "failed"
         print(f"{payload['command']}: {status}")
+        mismatch = payload.get("mismatch")
+        if isinstance(mismatch, dict):
+            print(
+                "mismatch: "
+                f"batch={mismatch['batch']} "
+                f"frame={mismatch['frame']} "
+                f"codebook={mismatch['codebook']} "
+                f"expected={mismatch['expected']} "
+                f"actual={mismatch['actual']}"
+            )
 
 
 def _emit_batching(payload: dict[str, object], *, as_json: bool) -> None:
@@ -484,7 +541,8 @@ def _emit_batching(payload: dict[str, object], *, as_json: bool) -> None:
         for result in payload["results"]:
             print(
                 f"batch={result['batch_size']} frames={result['frames']} "
-                f"elapsed={result['elapsed_seconds']:.4f}s"
+                f"elapsed={result['elapsed_seconds']:.4f}s "
+                f"peak_memory={result['peak_memory_bytes']}B"
             )
 
 

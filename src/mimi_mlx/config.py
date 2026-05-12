@@ -7,6 +7,9 @@ from typing import Any
 
 from huggingface_hub import hf_hub_download
 
+DEFAULT_MIMI_REPO_ID = "kyutai/mimi"
+DEFAULT_MIMI_REVISION = "89091b3e466eb6a9d11e537bf26b144f194978f7"
+
 
 @dataclass(frozen=True)
 class MimiCodecConfig:
@@ -71,8 +74,20 @@ def _resolve_config_path(pretrained: str | Path, *, revision: str | None) -> Pat
         return path / "config.json"
     if path.is_file():
         return path
-    downloaded = hf_hub_download(str(pretrained), "config.json", revision=revision)
+    downloaded = hf_hub_download(
+        str(pretrained),
+        "config.json",
+        revision=_resolve_revision(str(pretrained), revision),
+    )
     return Path(downloaded)
+
+
+def _resolve_revision(pretrained: str, revision: str | None) -> str | None:
+    if revision is not None:
+        return revision
+    if pretrained == DEFAULT_MIMI_REPO_ID:
+        return DEFAULT_MIMI_REVISION
+    return None
 
 
 def _product(values: list[int]) -> int:

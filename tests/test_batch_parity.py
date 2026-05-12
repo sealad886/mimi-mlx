@@ -53,6 +53,17 @@ def test_equal_explicit_lengths_are_encoded_as_one_batch():
     assert np.array_equal(np.array(tokens.audio_lengths), np.array([6, 6], dtype=np.int32))
 
 
+def test_explicit_lengths_must_be_integer_sample_counts():
+    tokenizer = MimiTokenizer(config=MimiCodecConfig.default(), model=object())
+
+    with pytest.raises(ValueError, match="lengths must use an integer dtype"):
+        tokenizer.encode_batch(
+            mx.zeros((1, 10), dtype=mx.float32),
+            lengths=mx.array([6.9], dtype=mx.float32),
+            sample_rate=24_000,
+        )
+
+
 def test_same_length_batch_tokens_match_individual_encode(tokenizer: MimiTokenizer):
     one, sample_rate = sf.read(ROOT / "fixtures/audio/sine_440_025s.wav", dtype="float32")
     two, _ = sf.read(ROOT / "fixtures/audio/noise_low_025s.wav", dtype="float32")

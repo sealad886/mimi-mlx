@@ -47,7 +47,9 @@ HF checkpoint tensor families observed from the safetensors header:
 ## MLX Mapping
 
 `MimiModel.load_hf_weights` maps every tensor in `model.safetensors` and validates the
-post-conversion MLX shape before assignment.
+post-conversion MLX shape before assignment. It also verifies that every expected
+model tensor was assigned, so partial checkpoints cannot leave parameters at
+their zero initialization values.
 
 - Codebook `embed_sum`, `cluster_usage`, and `initialized` map directly to MLX codebook buffers.
 - PyTorch conv weights require `[out, in, kernel]` to MLX `[out, kernel, in]`.
@@ -60,6 +62,9 @@ post-conversion MLX shape before assignment.
 
 `mimi_mlx.weights.validate_hf_mimi_header` validates a required sentinel set across
 encoder, decoder, transformer, downsample, upsample, and split-RVQ families.
+Runtime remote loading of the canonical `kyutai/mimi` model defaults to revision
+`89091b3e466eb6a9d11e537bf26b144f194978f7`; callers can still pass an explicit
+`revision=` to opt into another checkpoint.
 
 `scripts/inspect_weights.py` reports JSON or human-readable manifest summaries and exits
 non-zero on missing or shape-mismatched required tensors.

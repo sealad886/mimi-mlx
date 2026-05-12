@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import mlx.core as mx
@@ -77,3 +80,55 @@ def test_encode_is_deterministic_across_reset(tokenizer: MimiTokenizer, manifest
 
     assert np.array_equal(np.array(first), np.array(second))
     assert np.array_equal(np.array(first), np.array(third))
+
+
+@pytest.mark.skipif(
+    not (LOCAL_WEIGHTS / "model.safetensors").exists(),
+    reason="official Mimi weights are not present under fixtures/reference/hf",
+)
+def test_rustymimi_exact_token_parity_when_reference_weights_are_available(manifest: dict):
+    reference_weights = os.environ.get("MIMI_RUSTYMIMI_WEIGHTS")
+    if not reference_weights:
+        pytest.skip("MIMI_RUSTYMIMI_WEIGHTS is not set")
+    reference_path = Path(reference_weights)
+    if not reference_path.exists():
+        pytest.skip(f"MIMI_RUSTYMIMI_WEIGHTS does not exist: {reference_path}")
+
+    fixture = manifest["fixtures"][1]
+    parity = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mimi_mlx.cli",
+            "parity",
+            str(ROOT / fixture["audio_path"]),
+            "--reference",
+            "rustymimi",
+            "--weights",
+            str(LOCAL_WEIGHTS),
+            "--reference-weights",
+            str(reference_path),
+            "--json",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert parity.returncode == 0, parity.stderr
+    payload = json.loads(parity.stdout)
+    assert payload["ok"] is True
+    assert payload["reference"] == "rustymimi"
+
+
+def test_first_token_mismatch_reports_upstream_layout_indices():
+    expected = np.zeros((1, 32, 4), dtype=np.int32)
+    actual = expected.copy()
+    actual[0, 7, 2] = 1
+
+    mismatch = first_token_mismatch(expected, actual)
+
+    assert mismatch is not None
+    assert mismatch.batch == 0
+    assert mismatch.frame == 2
+    assert mismatch.codebook == 7

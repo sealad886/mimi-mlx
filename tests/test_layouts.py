@@ -37,7 +37,7 @@ def test_layout_validation_rejects_unknown_layout():
 def test_npz_token_round_trip(tmp_path):
     path = tmp_path / "tokens.npz"
     tokens = MimiTokens(
-        codes=mx.array(np.arange(2 * 3 * 4).reshape(2, 3, 4)),
+        codes=mx.array(np.arange(2 * 3 * 32).reshape(2, 3, 32)),
         lengths=mx.array([3, 2]),
         sample_rate=24_000,
         frame_rate=12.5,
@@ -58,7 +58,7 @@ def test_npz_token_round_trip(tmp_path):
 def test_npz_token_file_is_mlx_loadable(tmp_path):
     path = tmp_path / "tokens.npz"
     tokens = MimiTokens(
-        codes=mx.array(np.arange(2 * 3 * 4).reshape(2, 3, 4)),
+        codes=mx.array(np.arange(2 * 3 * 32).reshape(2, 3, 32)),
         lengths=mx.array([3, 2]),
         sample_rate=24_000,
         frame_rate=12.5,
@@ -80,7 +80,7 @@ def test_legacy_numpy_npz_token_file_still_loads(tmp_path):
     path = tmp_path / "legacy_tokens.npz"
     np.savez(
         path,
-        codes=np.arange(2 * 3 * 4).reshape(2, 3, 4),
+        codes=np.arange(2 * 3 * 32).reshape(2, 3, 32),
         lengths=np.array([3, 2], dtype=np.int32),
         sample_rate=24_000,
         frame_rate=12.5,
@@ -93,21 +93,73 @@ def test_legacy_numpy_npz_token_file_still_loads(tmp_path):
     assert loaded.sample_rate == 24_000
     assert loaded.frame_rate == 12.5
     assert loaded.layout == "batch_time_codebook"
-    assert np.array_equal(np.array(loaded.codes), np.arange(2 * 3 * 4).reshape(2, 3, 4))
+    assert np.array_equal(np.array(loaded.codes), np.arange(2 * 3 * 32).reshape(2, 3, 32))
     assert np.array_equal(np.array(loaded.lengths), np.array([3, 2], dtype=np.int32))
     assert np.array_equal(np.array(loaded.audio_lengths), np.array([4800, 3200], dtype=np.int32))
 
 
+def test_npz_token_file_rejects_missing_required_fields(tmp_path):
+    path = tmp_path / "missing_layout.npz"
+    np.savez(
+        path,
+        codes=np.arange(2 * 3 * 32).reshape(2, 3, 32),
+        lengths=np.array([3, 2], dtype=np.int32),
+        sample_rate=24_000,
+        frame_rate=12.5,
+    )
+
+    with pytest.raises(ValueError, match="Token archive missing required field: layout"):
+        load_tokens_npz(path)
+
+
+def test_npz_token_file_rejects_non_3d_codes(tmp_path):
+    path = tmp_path / "rank2_tokens.npz"
+    np.savez(
+        path,
+        codes=np.arange(2 * 3).reshape(2, 3),
+        lengths=np.array([3, 2], dtype=np.int32),
+        sample_rate=24_000,
+        frame_rate=12.5,
+        layout="batch_time_codebook",
+    )
+
+    with pytest.raises(ValueError, match=r"Expected token codes shape \[B,T,K=32\]"):
+        load_tokens_npz(path)
+
+
+def test_npz_token_file_rejects_length_batch_mismatch(tmp_path):
+    path = tmp_path / "bad_lengths.npz"
+    np.savez(
+        path,
+        codes=np.arange(2 * 3 * 32).reshape(2, 3, 32),
+        lengths=np.array([3], dtype=np.int32),
+        sample_rate=24_000,
+        frame_rate=12.5,
+        layout="batch_time_codebook",
+    )
+
+    with pytest.raises(ValueError, match="Expected token lengths shape \\[2\\]"):
+        load_tokens_npz(path)
+
+
 def test_npy_code_round_trip(tmp_path):
     path = tmp_path / "tokens.npy"
-    codes = mx.array(np.arange(2 * 3 * 4).reshape(2, 3, 4))
+    codes = mx.array(np.arange(2 * 3 * 32).reshape(2, 3, 32))
 
     save_tokens_npy(path, codes)
     loaded = load_tokens_npy(path, sample_rate=24_000, frame_rate=12.5)
 
-    assert loaded.codes.shape == (2, 3, 4)
+    assert loaded.codes.shape == (2, 3, 32)
     assert np.array_equal(np.array(loaded.codes), np.array(codes))
     assert np.array_equal(np.array(loaded.lengths), np.array([3, 3]))
+
+
+def test_npy_code_load_rejects_wrong_codebook_axis(tmp_path):
+    path = tmp_path / "upstream_tokens.npy"
+    mx.save(path, mx.zeros((1, 32, 4), dtype=mx.int32))
+
+    with pytest.raises(ValueError, match="Expected saved canonical codes shape \\[B,T,K=32\\]"):
+        load_tokens_npy(path, sample_rate=24_000, frame_rate=12.5)
 
 
 def test_npy_save_uses_mlx_save(monkeypatch, tmp_path):
@@ -128,7 +180,7 @@ def test_npy_save_uses_mlx_save(monkeypatch, tmp_path):
 
 def test_npy_load_uses_mlx_load(monkeypatch, tmp_path):
     path = tmp_path / "tokens.npy"
-    codes = mx.array(np.arange(2 * 3 * 4).reshape(2, 3, 4))
+    codes = mx.array(np.arange(2 * 3 * 32).reshape(2, 3, 32))
     calls = {}
 
     def fake_load(file):

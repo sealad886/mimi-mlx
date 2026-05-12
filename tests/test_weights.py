@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import struct
 
+import mlx.core as mx
 import pytest
 
+from mimi_mlx.model import MimiModel, MimiModelConfig
 from mimi_mlx.weights import (
     HF_MIMI_REQUIRED_TENSORS,
     WeightLoadError,
@@ -74,6 +76,38 @@ def test_hf_mimi_header_validation_rejects_shape_mismatch(tmp_path):
 
     with pytest.raises(WeightLoadError, match="Shape mismatch"):
         validate_hf_mimi_header(path)
+
+
+def test_model_weight_loader_rejects_partial_checkpoints(tmp_path):
+    config = MimiModelConfig(
+        hidden_size=4,
+        num_filters=1,
+        upsampling_ratios=(2,),
+        num_hidden_layers=1,
+        intermediate_size=8,
+        num_attention_heads=1,
+        num_key_value_heads=1,
+        head_dim=4,
+        max_position_embeddings=16,
+        sliding_window=4,
+        codebook_size=8,
+        codebook_dim=4,
+        num_codebooks=2,
+        num_semantic_quantizers=1,
+        upsample_groups=4,
+        kernel_size=3,
+        last_kernel_size=3,
+        residual_kernel_size=3,
+    )
+    model = MimiModel(config)
+    partial = tmp_path / "partial.safetensors"
+    mx.save_safetensors(
+        str(partial),
+        {"encoder.layers.0.conv.weight": model.encoder.layers[0].conv.weight.swapaxes(-1, -2)},
+    )
+
+    with pytest.raises(WeightLoadError, match="Missing .* Mimi tensors"):
+        model.load_hf_weights(partial)
 
 
 def _write_header(path, header):

@@ -171,6 +171,12 @@ class MimiResidualVectorQuantizer:
         return mx.stack(all_indices, axis=0)
 
     def decode(self, codes: mx.array) -> mx.array:
+        if codes.ndim != 3:
+            raise ValueError(f"Expected codes shape [B,K,T], got {codes.shape}")
+        if codes.shape[1] < 1 or codes.shape[1] > len(self.layers):
+            raise ValueError(
+                f"Expected between 1 and {len(self.layers)} codebooks, got code shape {codes.shape}"
+            )
         codes = codes.swapaxes(0, 1)
         quantized = self.layers[0].decode(codes[0])
         for index, layer in enumerate(self.layers[1:], start=1):
@@ -210,6 +216,16 @@ class MimiSplitResidualVectorQuantizer:
         return codes
 
     def decode(self, codes: mx.array) -> mx.array:
+        if codes.ndim != 3:
+            raise ValueError(f"Expected codes shape [B,K,T], got {codes.shape}")
+        if (
+            codes.shape[1] < self.num_semantic_quantizers
+            or codes.shape[1] > self.max_num_quantizers
+        ):
+            raise ValueError(
+                f"Expected between {self.num_semantic_quantizers} and "
+                f"{self.max_num_quantizers} codebooks, got code shape {codes.shape}"
+            )
         semantic = self.semantic_residual_vector_quantizer.decode(
             codes[:, : self.num_semantic_quantizers]
         )

@@ -11,3 +11,14 @@ def test_decode_is_explicitly_unimplemented_until_model_stage():
 
     with pytest.raises(NotImplementedError, match="MLX Mimi model is not loaded"):
         tokenizer.decode(mx.zeros((1, 10, 32), dtype=mx.int32), sample_rate=24_000)
+
+
+def test_decode_rejects_upstream_token_layout():
+    class FakeModel:
+        def decode(self, codes):
+            raise AssertionError("decode should reject before model call")
+
+    tokenizer = MimiTokenizer(config=MimiCodecConfig.default(), model=FakeModel())
+
+    with pytest.raises(ValueError, match="use from_upstream_layout"):
+        tokenizer.decode(mx.zeros((1, 32, 4), dtype=mx.int32), sample_rate=24_000)

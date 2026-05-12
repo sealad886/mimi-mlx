@@ -25,6 +25,11 @@ Regenerate fixtures after changing the reference implementation or fixture audio
 python scripts/export_reference_fixtures.py --weights fixtures/reference/hf
 ```
 
+The real-speech fixture requires the ignored LibriSpeech parquet source under
+`fixtures/source/`. The exporter fails if that source is missing so a fresh
+regeneration cannot silently drop the committed speech fixture. Pass
+`--allow-missing-speech-source` only for an intentional synthetic-only local run.
+
 The official weights are not committed. Download them with:
 
 ```bash

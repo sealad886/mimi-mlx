@@ -171,6 +171,16 @@ def test_cli_rustymimi_reference_requires_reference_weights():
     assert "rustymimi parity requires --reference-weights" in parity.stderr
 
 
+def test_rustymimi_reference_rejects_hf_model_file(tmp_path: Path):
+    from mimi_mlx import cli
+
+    wrong_file = tmp_path / "model.safetensors"
+    wrong_file.write_bytes(b"not a tokenizer")
+
+    with pytest.raises(SystemExit, match="rustymimi reference weights must be a Moshi tokenizer"):
+        cli._resolve_rustymimi_reference_weights(str(wrong_file))
+
+
 def test_rustymimi_reference_codes_use_channel_first_audio_and_full_codebooks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -193,7 +203,7 @@ def test_rustymimi_reference_codes_use_channel_first_audio_and_full_codebooks(
             captured["reset"] = True
 
     monkeypatch.setitem(sys.modules, "rustymimi", types.SimpleNamespace(Tokenizer=FakeTokenizer))
-    reference_weights = tmp_path / "tokenizer.safetensors"
+    reference_weights = tmp_path / "tokenizer-fake.safetensors"
     reference_weights.write_bytes(b"fake")
 
     codes = cli._rustymimi_reference_codes(
@@ -275,6 +285,65 @@ def test_metric_helpers_count_batched_audio_and_tokens():
     assert cli._audio_seconds(np.zeros((2, 16), dtype=np.float32), 8) == 4.0
     assert cli._audio_seconds(np.zeros((2, 1, 16), dtype=np.float32), 8) == 4.0
     assert cli._token_frame_count(mx.zeros((3, 5, 32), dtype=mx.int32)) == 15
+
+
+def test_benchmark_encode_reports_peak_memory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    from mimi_mlx import cli
+
+    input_dir = tmp_path / "audio"
+    input_dir.mkdir()
+    (input_dir / "clip.wav").write_bytes(b"fake")
+
+    class FakeTokenizer:
+        def encode(self, audio: mx.array, *, sample_rate: int):
+            return types.SimpleNamespace(codes=mx.zeros((1, 3, 32), dtype=mx.int32))
+
+    monkeypatch.setattr(cli, "_load_tokenizer", lambda weights: FakeTokenizer())
+    monkeypatch.setattr(cli, "_read_audio", lambda path, sample_rate=None: (np.zeros(16), 24_000))
+    monkeypatch.setattr(cli.mx, "eval", lambda *args: None)
+    monkeypatch.setattr(cli.mx, "reset_peak_memory", lambda: None)
+    monkeypatch.setattr(cli.mx, "get_peak_memory", lambda: 1234)
+    ticks = iter([1.0, 1.25])
+    monkeypatch.setattr(cli.time, "perf_counter", lambda: next(ticks))
+
+    result = cli._benchmark_command(
+        Namespace(
+            weights="fixtures/reference/hf",
+            input_dir=str(input_dir),
+            benchmark_command="encode",
+            prefetch_workers=1,
+            json=True,
+        )
+    )
+
+    assert result == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["peak_memory_bytes"] == 1234
+
+
+def test_text_parity_failure_prints_mismatch(capsys: pytest.CaptureFixture[str]):
+    from mimi_mlx import cli
+
+    cli._emit(
+        {
+            "command": "parity",
+            "ok": False,
+            "mismatch": {
+                "batch": 0,
+                "frame": 1,
+                "codebook": 2,
+                "expected": 3,
+                "actual": 4,
+            },
+        },
+        as_json=False,
+    )
+
+    assert "batch=0 frame=1 codebook=2 expected=3 actual=4" in capsys.readouterr().out
 
 
 def test_prefetched_audio_uses_bounded_thread_executor(monkeypatch: pytest.MonkeyPatch):

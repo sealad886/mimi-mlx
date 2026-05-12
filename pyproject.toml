@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mimi-mlx"
-version = "0.3.0"
+version = "0.3.1"
 description = "MLX-native Kyutai Mimi audio codec tokenization and reconstruction"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.3",
   "pytest>=9.0",
   "ruff>=0.14",
 ]

@@ -146,15 +146,23 @@ class MimiModel:
 
     def load_hf_weights(self, path: str | Path) -> None:
         state = mx.load(str(path))
+        expected = self._expected_weight_names()
+        assigned: set[str] = set()
         missing = []
         for name, value in state.items():
             if name == "__metadata__":
                 continue
             if not self._assign_weight(name, value):
                 missing.append(name)
+            else:
+                assigned.add(name)
         if missing:
             preview = ", ".join(missing[:10])
             raise WeightLoadError(f"Could not map {len(missing)} Mimi tensors: {preview}")
+        absent = sorted(expected - assigned)
+        if absent:
+            preview = ", ".join(absent[:10])
+            raise WeightLoadError(f"Missing {len(absent)} Mimi tensors: {preview}")
 
     def _assign_weight(self, name: str, value: mx.array) -> bool:
         target_name = name
@@ -203,3 +211,29 @@ class MimiModel:
             else:
                 current = getattr(current, part)
         return current
+
+    def _expected_weight_names(self) -> set[str]:
+        names: set[str] = set()
+        self._collect_weight_names(self, "", names)
+        return names
+
+    def _collect_weight_names(self, value: object, prefix: str, names: set[str]) -> None:
+        if isinstance(value, mx.array):
+            names.add(prefix)
+            return
+        if isinstance(value, (str, int, float, bool, type(None))):
+            return
+        if isinstance(value, (list, tuple)):
+            for index, item in enumerate(value):
+                child = f"{prefix}.{index}" if prefix else str(index)
+                self._collect_weight_names(item, child, names)
+            return
+        if isinstance(value, dict):
+            return
+        if not hasattr(value, "__dict__"):
+            return
+        for name, item in vars(value).items():
+            if name.startswith("_") or item is None:
+                continue
+            child = f"{prefix}.{name}" if prefix else name
+            self._collect_weight_names(item, child, names)

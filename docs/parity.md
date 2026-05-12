@@ -28,6 +28,19 @@ Verification:
   --json                              # pass, "ok": true
 ```
 
+## 2026-05-12 Audit Notes
+
+Current local verification still proves exact Transformers token parity with
+the committed fixtures and local HF weights. Rust parity is weight-gated: it is
+only proven when `MIMI_RUSTYMIMI_WEIGHTS` or `--reference-weights` points at the
+Moshi `tokenizer-*.safetensors` checkpoint. The test suite includes a skipped
+integration test that runs the real Rust parity command when that checkpoint is
+present.
+
+The Rust parity CLI now rejects explicit files that are not named
+`tokenizer-*.safetensors`, so passing `fixtures/reference/hf/model.safetensors`
+fails before entering `rustymimi`.
+
 Rust parity uses `rustymimi.Tokenizer(..., num_codebooks=32)` and compares
 the Rust `[batch, codebook, time]` output directly against the MLX output after
 `mimi_mlx.layouts.to_upstream_layout`. The Rust checkpoint is separate from the

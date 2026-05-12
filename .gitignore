@@ -4,5 +4,10 @@
 .venv/
 __pycache__/
 *.egg-info/
+build/
+dist/
+*.egg
+*.whl
+*.tar.gz
 fixtures/reference/hf/
 fixtures/source/

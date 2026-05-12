@@ -5,13 +5,13 @@ import os
 import subprocess
 from pathlib import Path
 
-DEFAULT_REVISION = "89091b3e466eb6a9d11e537bf26b144f194978f7"
+from mimi_mlx.config import DEFAULT_MIMI_REPO_ID, DEFAULT_MIMI_REVISION
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Download official Mimi assets with the HF CLI")
-    parser.add_argument("--repo-id", default="kyutai/mimi")
-    parser.add_argument("--revision", default=DEFAULT_REVISION)
+    parser.add_argument("--repo-id", default=DEFAULT_MIMI_REPO_ID)
+    parser.add_argument("--revision", default=DEFAULT_MIMI_REVISION)
     parser.add_argument("--output-dir", default="fixtures/reference/hf")
     parser.add_argument(
         "--enable-xet",

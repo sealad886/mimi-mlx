@@ -10,9 +10,11 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import torch
+from huggingface_hub import hf_hub_download
 from transformers import MimiModel
 
-DEFAULT_REVISION = "89091b3e466eb6a9d11e537bf26b144f194978f7"
+from mimi_mlx.config import DEFAULT_MIMI_REVISION
+
 DEFAULT_SAMPLE_RATE = 24_000
 
 
@@ -26,14 +28,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Export Mimi reference parity fixtures")
     parser.add_argument("--weights", default="fixtures/reference/hf")
     parser.add_argument("--output-root", default="fixtures")
-    parser.add_argument("--revision", default=DEFAULT_REVISION)
+    parser.add_argument("--revision", default=DEFAULT_MIMI_REVISION)
+    parser.add_argument(
+        "--allow-missing-speech-source",
+        action="store_true",
+        help="Regenerate only synthetic fixtures when the LibriSpeech source parquet is absent",
+    )
     parser.add_argument(
         "--speech-source-parquet",
         default="fixtures/source/librispeech_asr_dummy/clean/validation-00000-of-00001.parquet",
     )
     args = parser.parse_args()
 
-    weights = Path(args.weights)
     output_root = Path(args.output_root)
     audio_dir = output_root / "audio"
     reference_dir = output_root / "reference"
@@ -41,8 +47,8 @@ def main() -> int:
     reference_dir.mkdir(parents=True, exist_ok=True)
 
     torch.set_num_threads(1)
-    model = MimiModel.from_pretrained(str(weights)).eval()
-    weights_path = weights / "model.safetensors"
+    model = load_reference_model(args.weights, revision=args.revision)
+    weights_path = resolve_weights_file(args.weights, revision=args.revision)
     manifest: dict[str, object] = {
         "schema_version": 1,
         "upstream": {
@@ -55,7 +61,10 @@ def main() -> int:
         "fixtures": [],
     }
 
-    for generated in generated_audio(Path(args.speech_source_parquet)):
+    for generated in generated_audio(
+        Path(args.speech_source_parquet),
+        allow_missing_speech_source=args.allow_missing_speech_source,
+    ):
         wav_path = audio_dir / f"{generated.fixture_id}.wav"
         sf.write(wav_path, generated.samples, DEFAULT_SAMPLE_RATE, subtype="FLOAT")
         reread, sample_rate = sf.read(wav_path, dtype="float32", always_2d=False)
@@ -96,7 +105,28 @@ def main() -> int:
     return 0
 
 
-def generated_audio(speech_source_parquet: Path) -> list[GeneratedAudio]:
+def load_reference_model(weights: str | Path, *, revision: str):
+    path = Path(weights)
+    if path.exists():
+        return MimiModel.from_pretrained(str(path)).eval()
+    return MimiModel.from_pretrained(str(weights), revision=revision).eval()
+
+
+def resolve_weights_file(weights: str | Path, *, revision: str) -> Path:
+    path = Path(weights)
+    if path.exists():
+        weights_path = path / "model.safetensors" if path.is_dir() else path
+        if not weights_path.exists():
+            raise FileNotFoundError(f"Could not find model.safetensors under {path}")
+        return weights_path
+    return Path(hf_hub_download(str(weights), "model.safetensors", revision=revision))
+
+
+def generated_audio(
+    speech_source_parquet: Path,
+    *,
+    allow_missing_speech_source: bool = False,
+) -> list[GeneratedAudio]:
     sr = DEFAULT_SAMPLE_RATE
     t025 = np.arange(sr // 4, dtype=np.float32) / sr
     t100 = np.arange(sr, dtype=np.float32) / sr
@@ -133,15 +163,28 @@ def generated_audio(speech_source_parquet: Path) -> list[GeneratedAudio]:
         GeneratedAudio("odd_length_6017", odd),
         GeneratedAudio("synthetic_speech_like_050s", speech_like),
     ]
-    speech = maybe_load_speech_fixture(speech_source_parquet)
+    speech = maybe_load_speech_fixture(
+        speech_source_parquet,
+        allow_missing=allow_missing_speech_source,
+    )
     if speech is not None:
         fixtures.append(speech)
     return fixtures
 
 
-def maybe_load_speech_fixture(source: Path) -> GeneratedAudio | None:
+def maybe_load_speech_fixture(
+    source: Path,
+    *,
+    allow_missing: bool = False,
+) -> GeneratedAudio | None:
     if not source.exists():
-        return None
+        if allow_missing:
+            return None
+        raise FileNotFoundError(
+            "Missing LibriSpeech source parquet for real_speech_librispeech_100s: "
+            f"{source}. Download reference sources or pass --allow-missing-speech-source "
+            "for a synthetic-only fixture set."
+        )
 
     import pyarrow.parquet as pq
 

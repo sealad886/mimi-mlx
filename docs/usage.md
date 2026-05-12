@@ -225,9 +225,11 @@ mimi-mlx benchmark batching --weights fixtures/reference/hf \
 ```
 
 Benchmark commands emit elapsed time, audio seconds, real-time factor, and
-token-frame counts where applicable. Encode and decode benchmarks use the same
-threaded audio prefetch path as `encode-dir`. See `docs/benchmarks.md` for
-current local smoke results.
+token-frame counts where applicable. They also report `peak_memory_bytes` using
+MLX allocator peak memory after an unmeasured warmup. Encode and decode
+benchmarks use the same threaded audio prefetch path as `encode-dir`. Decode
+benchmarks precompute tokens before timing so the measured region is decode-only.
+See `docs/benchmarks.md` for current local smoke results.
 
 ## Troubleshooting
 

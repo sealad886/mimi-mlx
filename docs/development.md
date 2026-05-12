@@ -79,6 +79,12 @@ backend, or parity export logic:
 python scripts/export_reference_fixtures.py --weights fixtures/reference/hf
 ```
 
+The real-speech fixture depends on the ignored LibriSpeech source parquet under
+`fixtures/source/`. Missing source data fails by default so fixture regeneration
+cannot silently drop `real_speech_librispeech_100s`. Use
+`--allow-missing-speech-source` only when intentionally generating a synthetic-only
+fixture set for local experiments.
+
 Then run:
 
 ```bash
@@ -137,6 +143,47 @@ python scripts/benchmark_batching.py --weights fixtures/reference/hf \
 
 If a change intentionally affects performance, update `docs/benchmarks.md` with
 the command, hardware context if known, and the new result table.
+
+## Release readiness
+
+Before publishing or tagging a release:
+
+1. Confirm `pyproject.toml` has the intended semantic version.
+2. Reinstall the current checkout in `.venv` with the needed extras:
+
+   ```bash
+   python -m pip install -e ".[dev,reference]"
+   ```
+
+3. Run the full local validation set:
+
+   ```bash
+   pytest -q
+   ruff check .
+   python -m mimi_mlx.cli --help
+   ```
+
+4. With local weights present, run the parity and benchmark spot checks:
+
+   ```bash
+   python scripts/compare_reference.py fixtures/audio/sine_440_025s.wav \
+     --weights fixtures/reference/hf --json
+   python scripts/benchmark_encode.py --weights fixtures/reference/hf \
+     --input-dir fixtures/audio --prefetch-workers 2 --json
+   python scripts/benchmark_decode.py --weights fixtures/reference/hf \
+     --input-dir fixtures/audio --prefetch-workers 2 --json
+   python scripts/benchmark_batching.py --weights fixtures/reference/hf \
+     --input-dir fixtures/audio --batch-sizes 1,2,4,8 --json
+   ```
+
+5. Build the wheel from the repository root:
+
+   ```bash
+   python -m build --wheel
+   ```
+
+6. Inspect the generated `dist/` artifact before publishing. `build/`, `dist/`,
+   wheels, sdists, and egg artifacts are ignored by git.
 
 ## Documentation expectations
 
