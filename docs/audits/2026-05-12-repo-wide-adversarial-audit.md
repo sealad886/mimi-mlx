@@ -18,9 +18,11 @@ Repository state at start:
 - Local HF reference assets: `fixtures/reference/hf/config.json`,
   `fixtures/reference/hf/model.safetensors`, and
   `fixtures/reference/hf/preprocessor_config.json` were present.
-- Rust reference checkpoint: `MIMI_RUSTYMIMI_WEIGHTS` was unset and
+- Rust reference checkpoint at baseline: `MIMI_RUSTYMIMI_WEIGHTS` was unset and
   `tokenizer-e351c8d8-checkpoint125.safetensors` was not found in the local
-  Hugging Face cache.
+  Hugging Face cache. This was later resolved by downloading the checkpoint
+  from `kyutai/moshika-mlx-bf16` revision
+  `03c68ab434ed33ae0716d38b0ee237069477066c`.
 
 Authoritative external contracts checked:
 
@@ -146,7 +148,7 @@ Shard 0 baseline
 ### MIMI-AUD-006: Rust reference could be pointed at the wrong HF checkpoint file
 
 - Severity: high.
-- Status: fixed for validation, blocked for local exact Rust run.
+- Status: fixed.
 - Affected files: `src/mimi_mlx/cli.py`, `tests/test_cli.py`,
   `tests/test_reference_parity.py`, `docs/parity.md`.
 - Evidence: a direct explicit file path such as `fixtures/reference/hf/model.safetensors`
@@ -158,8 +160,10 @@ Shard 0 baseline
   `tokenizer-*.safetensors`; add an integration test that only runs when
   `MIMI_RUSTYMIMI_WEIGHTS` is available.
 - Proof command: `.venv/bin/pytest tests/test_cli.py tests/test_reference_parity.py -q`.
-- Residual risk: exact Rust parity remains weight-gated in this local checkout
-  until the Moshi tokenizer checkpoint is provided.
+- Additional proof: exact Rust token parity passed for every committed WAV
+  fixture after downloading
+  `tokenizer-e351c8d8-checkpoint125.safetensors` from `kyutai/moshika-mlx-bf16`.
+- Residual risk: none known for stateless full-clip fixture parity.
 
 ### MIMI-AUD-007: Text-mode parity failures hid mismatch details
 
@@ -225,19 +229,9 @@ Shard 0 baseline
 
 ## Blocked Or Residual Items
 
-- Exact Rust token parity is blocked locally because
-  `MIMI_RUSTYMIMI_WEIGHTS` is unset and the Moshi tokenizer checkpoint is not
-  present in the Hugging Face cache. Required artifact:
-  `tokenizer-e351c8d8-checkpoint125.safetensors` from a compatible Kyutai Moshi
-  snapshot. Once available, run:
-
-```bash
-.venv/bin/python -m mimi_mlx.cli parity fixtures/audio/sine_440_025s.wav \
-  --reference rustymimi \
-  --weights fixtures/reference/hf \
-  --reference-weights "$MIMI_RUSTYMIMI_WEIGHTS" \
-  --json
-```
+- Exact Rust token parity is no longer blocked locally. The Moshi tokenizer
+  checkpoint was downloaded to:
+  `/Users/andrew/.cache/huggingface/hub/models--kyutai--moshika-mlx-bf16/snapshots/03c68ab434ed33ae0716d38b0ee237069477066c/tokenizer-e351c8d8-checkpoint125.safetensors`.
 
 - Benchmark peak memory now reports MLX allocator peak memory, not total
   process resident memory.
@@ -275,6 +269,20 @@ env -u MIMI_RUSTYMIMI_WEIGHTS .venv/bin/python -m mimi_mlx.cli parity \
   --weights fixtures/reference/hf --json
 # blocked as expected:
 # rustymimi parity requires --reference-weights pointing at tokenizer-*.safetensors
+
+.venv/bin/python -m mimi_mlx.cli parity fixtures/audio/sine_440_025s.wav \
+  --reference rustymimi --weights fixtures/reference/hf \
+  --reference-weights /Users/andrew/.cache/huggingface/hub/models--kyutai--moshika-mlx-bf16/snapshots/03c68ab434ed33ae0716d38b0ee237069477066c/tokenizer-e351c8d8-checkpoint125.safetensors \
+  --json
+# "ok": true, "codes_shape": [1, 32, 4]
+
+for wav in fixtures/audio/*.wav; do
+  .venv/bin/python -m mimi_mlx.cli parity "$wav" --reference rustymimi \
+    --weights fixtures/reference/hf \
+    --reference-weights /Users/andrew/.cache/huggingface/hub/models--kyutai--moshika-mlx-bf16/snapshots/03c68ab434ed33ae0716d38b0ee237069477066c/tokenizer-e351c8d8-checkpoint125.safetensors \
+    --json
+done
+# all 9 committed WAV fixtures returned "ok": true
 
 .venv/bin/python scripts/benchmark_encode.py --weights fixtures/reference/hf \
   --input-dir fixtures/audio --prefetch-workers 2 --json
