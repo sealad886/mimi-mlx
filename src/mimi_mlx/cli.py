@@ -4,6 +4,10 @@ import argparse
 import json
 import os
 import time
+from collections import deque
+from collections.abc import Iterable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
 import mlx.core as mx
@@ -25,6 +29,16 @@ def build_parser() -> argparse.ArgumentParser:
     encode.add_argument("--output", required=True)
     encode.add_argument("--sample-rate", type=int)
     encode.add_argument("--json", action="store_true")
+
+    encode_dir = subcommands.add_parser(
+        "encode-dir", help="Encode a directory of WAV files to Mimi tokens"
+    )
+    encode_dir.add_argument("input_dir")
+    encode_dir.add_argument("--weights", required=True)
+    encode_dir.add_argument("--output-dir", required=True)
+    encode_dir.add_argument("--sample-rate", type=int)
+    encode_dir.add_argument("--prefetch-workers", type=int, default=2)
+    encode_dir.add_argument("--json", action="store_true")
 
     decode = subcommands.add_parser("decode", help="Decode Mimi tokens to audio")
     decode.add_argument("tokens")
@@ -50,7 +64,10 @@ def build_parser() -> argparse.ArgumentParser:
         command = benchmark_subcommands.add_parser(name, help=f"Benchmark {name}")
         command.add_argument("--weights", required=True)
         command.add_argument("--input-dir")
-        command.add_argument("--batch-sizes", default="1")
+        if name == "batching":
+            command.add_argument("--batch-sizes", default="1")
+        else:
+            command.add_argument("--prefetch-workers", type=int, default=2)
         command.add_argument("--json", action="store_true")
 
     return parser
@@ -61,6 +78,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "encode":
         return _encode_command(args)
+    if args.command == "encode-dir":
+        return _encode_dir_command(args)
     if args.command == "decode":
         return _decode_command(args)
     if args.command == "parity":
@@ -89,6 +108,19 @@ def _encode_command(args: argparse.Namespace) -> int:
         },
         as_json=args.json,
     )
+    return 0
+
+
+def _encode_dir_command(args: argparse.Namespace) -> int:
+    tokenizer = _load_tokenizer(args.weights)
+    payload = _encode_directory(
+        tokenizer,
+        Path(args.input_dir),
+        Path(args.output_dir),
+        sample_rate=args.sample_rate,
+        prefetch_workers=args.prefetch_workers,
+    )
+    _emit(payload, as_json=args.json)
     return 0
 
 
@@ -158,6 +190,108 @@ def _parity_command(args: argparse.Namespace) -> int:
         payload["mismatch"] = mismatch.__dict__
     _emit(payload, as_json=args.json)
     return 0 if ok else 1
+
+
+@dataclass(frozen=True)
+class AudioClip:
+    path: Path
+    audio: np.ndarray
+    sample_rate: int
+
+
+def _load_audio_clip(path: Path, sample_rate: int | None = None) -> AudioClip:
+    audio, detected_rate = _read_audio(path, sample_rate=sample_rate)
+    return AudioClip(path=path, audio=audio, sample_rate=detected_rate)
+
+
+def _iter_prefetched_audio(
+    paths: Iterable[Path],
+    *,
+    sample_rate: int | None,
+    prefetch_workers: int,
+) -> Iterator[AudioClip]:
+    if prefetch_workers <= 0:
+        raise SystemExit("--prefetch-workers must be positive")
+
+    path_iter = iter(paths)
+    with ThreadPoolExecutor(max_workers=prefetch_workers) as executor:
+        pending: deque[Future[AudioClip]] = deque()
+
+        def submit_next() -> bool:
+            try:
+                path = next(path_iter)
+            except StopIteration:
+                return False
+            pending.append(executor.submit(_load_audio_clip, path, sample_rate))
+            return True
+
+        for _ in range(prefetch_workers):
+            if not submit_next():
+                break
+
+        while pending:
+            future = pending.popleft()
+            clip = future.result()
+            submit_next()
+            yield clip
+
+
+def _audio_seconds(audio: np.ndarray, sample_rate: int) -> float:
+    return audio.size / sample_rate
+
+
+def _token_frame_count(codes: mx.array) -> int:
+    return int(codes.shape[0] * codes.shape[1])
+
+
+def _find_wav_files(input_dir: Path) -> list[Path]:
+    if not input_dir.is_dir():
+        raise SystemExit(f"Input path must be a directory: {input_dir}")
+    return sorted(
+        path for path in input_dir.iterdir() if path.is_file() and path.suffix.lower() == ".wav"
+    )
+
+
+def _encode_directory(
+    tokenizer: MimiTokenizer,
+    input_dir: Path,
+    output_dir: Path,
+    *,
+    sample_rate: int | None,
+    prefetch_workers: int,
+) -> dict[str, object]:
+    clips = _find_wav_files(input_dir)
+    if not clips:
+        raise SystemExit(f"No .wav files found under {input_dir}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    start = time.perf_counter()
+    outputs: list[str] = []
+    total_seconds = 0.0
+    token_frames = 0
+    for clip in _iter_prefetched_audio(
+        clips, sample_rate=sample_rate, prefetch_workers=prefetch_workers
+    ):
+        tokens = tokenizer.encode(mx.array(clip.audio), sample_rate=clip.sample_rate)
+        output_path = output_dir / f"{clip.path.stem}.npy"
+        MimiTokenizer.save_tokens_npy(output_path, tokens.codes)
+        outputs.append(str(output_path))
+        token_frames += _token_frame_count(tokens.codes)
+        total_seconds += _audio_seconds(clip.audio, clip.sample_rate)
+
+    elapsed = time.perf_counter() - start
+    return {
+        "command": "encode-dir",
+        "input_dir": str(input_dir),
+        "output_dir": str(output_dir),
+        "files": len(outputs),
+        "audio_seconds": total_seconds,
+        "elapsed_seconds": elapsed,
+        "real_time_factor": elapsed / total_seconds if total_seconds else None,
+        "token_frames": token_frames,
+        "outputs": outputs,
+        "prefetch_workers": prefetch_workers,
+    }
 
 
 def _transformers_reference_codes(weights: str, audio: np.ndarray) -> np.ndarray:
@@ -230,25 +364,26 @@ def _benchmark_command(args: argparse.Namespace) -> int:
     if args.benchmark_command == "batching":
         return _benchmark_batching(tokenizer, args)
 
-    clips = sorted(Path(args.input_dir).glob("*.wav"))
+    clips = _find_wav_files(Path(args.input_dir))
     if not clips:
         raise SystemExit(f"No .wav files found under {args.input_dir}")
 
     start = time.perf_counter()
     total_seconds = 0.0
     token_frames = 0
-    for clip in clips:
-        audio, sample_rate = _read_audio(clip)
+    for clip in _iter_prefetched_audio(
+        clips, sample_rate=None, prefetch_workers=args.prefetch_workers
+    ):
         if args.benchmark_command == "decode":
-            tokens = tokenizer.encode(mx.array(audio), sample_rate=sample_rate)
-            decoded = tokenizer.decode(tokens.codes, sample_rate=sample_rate)
+            tokens = tokenizer.encode(mx.array(clip.audio), sample_rate=clip.sample_rate)
+            decoded = tokenizer.decode(tokens.codes, sample_rate=clip.sample_rate)
             mx.eval(decoded)
-            token_frames += int(tokens.codes.shape[1])
+            token_frames += _token_frame_count(tokens.codes)
         else:
-            tokens = tokenizer.encode(mx.array(audio), sample_rate=sample_rate)
+            tokens = tokenizer.encode(mx.array(clip.audio), sample_rate=clip.sample_rate)
             mx.eval(tokens.codes)
-            token_frames += int(tokens.codes.shape[1])
-        total_seconds += np.asarray(audio).shape[0] / sample_rate
+            token_frames += _token_frame_count(tokens.codes)
+        total_seconds += _audio_seconds(clip.audio, clip.sample_rate)
     elapsed = time.perf_counter() - start
     payload = {
         "command": f"benchmark {args.benchmark_command}",
@@ -257,6 +392,7 @@ def _benchmark_command(args: argparse.Namespace) -> int:
         "elapsed_seconds": elapsed,
         "real_time_factor": elapsed / total_seconds if total_seconds else None,
         "token_frames": token_frames,
+        "prefetch_workers": args.prefetch_workers,
     }
     _emit(payload, as_json=args.json)
     return 0
@@ -300,10 +436,8 @@ def _parse_batch_sizes(batch_sizes: str) -> list[int]:
 
 def _load_same_rate_clips(input_dir: Path) -> list[tuple[np.ndarray, int]]:
     clips = []
-    for path in sorted(input_dir.glob("*.wav")):
-        audio, sample_rate = sf.read(path, dtype="float32", always_2d=False)
-        if audio.ndim != 1:
-            audio = audio[:, 0]
+    for path in _find_wav_files(input_dir):
+        audio, sample_rate = _read_audio(path)
         clips.append((audio, sample_rate))
     if not clips:
         raise SystemExit(f"No .wav files found under {input_dir}")
@@ -322,9 +456,17 @@ def _load_tokenizer(weights: str) -> MimiTokenizer:
 
 def _read_audio(path: str | Path, *, sample_rate: int | None = None) -> tuple[np.ndarray, int]:
     audio, detected_rate = sf.read(path, dtype="float32", always_2d=False)
+    if sample_rate is not None and sample_rate != detected_rate:
+        raise SystemExit(
+            f"--sample-rate {sample_rate} does not match detected WAV rate "
+            f"{detected_rate} for {path}"
+        )
     if audio.ndim == 2:
-        audio = audio.T
-    return audio, sample_rate or detected_rate
+        channels = audio.shape[1]
+        if channels != 1:
+            raise SystemExit(f"Expected mono WAV input, got {channels} channels in {path}")
+        audio = audio[:, 0]
+    return audio, detected_rate
 
 
 def _emit(payload: dict[str, object], *, as_json: bool) -> None:

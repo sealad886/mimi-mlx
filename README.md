@@ -1,11 +1,21 @@
 # mimi-mlx
 
-`mimi-mlx` is a correctness-first MLX-native port of Kyutai Mimi for Apple Silicon.
+`mimi-mlx` is a correctness-first MLX-native port of Kyutai Mimi for Apple
+Silicon. It provides local Mimi audio tokenization and reconstruction using the
+official Hugging Face `kyutai/mimi` checkpoint without importing PyTorch,
+`rustymimi`, `torchaudio`, or upstream Moshi code in the production package.
 
-Current status: MLX-native encode/decode is implemented against the Hugging Face
-`kyutai/mimi` checkpoint. The committed fixture set has exact encode token parity
-against `transformers.MimiModel`; decode matches the upstream waveform within the
-documented numerical tolerance.
+## Status
+
+- MLX-native encode and decode are implemented for the official `kyutai/mimi`
+  checkpoint.
+- The committed fixture set has exact encode token parity against
+  `transformers.MimiModel`.
+- Decode output matches the upstream waveform within the numerical tolerance
+  documented in `docs/parity.md`.
+- Same-length batches are supported directly. Variable-length padded batches
+  must pass explicit `lengths`; otherwise padded samples are treated as real
+  input.
 
 ## Install
 
@@ -15,13 +25,23 @@ python3.12 -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
-Reference tooling is isolated:
+Install reference-only dependencies only when exporting fixtures or comparing
+against PyTorch or `rustymimi`:
 
 ```bash
 python -m pip install -e ".[dev,reference]"
 ```
 
-Download the official Mimi assets with the Hugging Face CLI:
+## Model assets
+
+The official Mimi weights are not committed. Download them into the ignored
+`fixtures/reference/hf/` directory:
+
+```bash
+python scripts/download_reference_assets.py
+```
+
+Equivalent Hugging Face CLI command:
 
 ```bash
 HF_HUB_DISABLE_XET=1 hf download kyutai/mimi \
@@ -32,10 +52,87 @@ HF_HUB_DISABLE_XET=1 hf download kyutai/mimi \
   --include model.safetensors
 ```
 
-`fixtures/reference/hf/` is intentionally ignored by git.
+Validate the downloaded safetensors header:
 
-For Rust reference parity, download the Moshi tokenizer checkpoint used by
-`rustymimi`:
+```bash
+python scripts/inspect_weights.py fixtures/reference/hf/model.safetensors
+```
+
+## CLI quickstart
+
+Encode a mono WAV file to canonical Mimi tokens (`[batch, frames, codebooks]`):
+
+```bash
+mimi-mlx encode fixtures/audio/sine_440_025s.wav \
+  --weights fixtures/reference/hf \
+  --output /tmp/sine_440_tokens.npy \
+  --json
+```
+
+Decode the tokens back to audio:
+
+```bash
+mimi-mlx decode /tmp/sine_440_tokens.npy \
+  --weights fixtures/reference/hf \
+  --output /tmp/sine_440_recon.wav \
+  --json
+```
+
+Encode a WAV directory with bounded CPU prefetch and MLX-native token saves:
+
+```bash
+mimi-mlx encode-dir fixtures/audio \
+  --weights fixtures/reference/hf \
+  --output-dir /tmp/mimi_tokens \
+  --prefetch-workers 2 \
+  --json
+```
+
+Run a reference parity check:
+
+```bash
+mimi-mlx parity fixtures/audio/sine_440_025s.wav \
+  --reference transformers \
+  --weights fixtures/reference/hf \
+  --json
+```
+
+## Python API quickstart
+
+```python
+import mlx.core as mx
+from mimi_mlx import MimiTokenizer
+
+tokenizer = MimiTokenizer.from_pretrained("fixtures/reference/hf")
+audio = mx.zeros((24_000,))
+
+tokens = tokenizer.encode(audio, sample_rate=24_000)
+reconstructed = tokenizer.decode(tokens.codes, sample_rate=24_000)
+```
+
+`tokens.codes` uses the project canonical layout `[batch, frames, codebooks]`.
+Use `mimi_mlx.layouts.to_upstream_layout` for upstream
+`[batch, codebooks, frames]`.
+
+## Verify the checkout
+
+```bash
+pytest -q
+ruff check .
+python -m mimi_mlx.cli --help
+```
+
+Once local weights are present, run the parity fixture workflow:
+
+```bash
+python scripts/export_reference_fixtures.py --weights fixtures/reference/hf
+pytest -q
+python scripts/compare_reference.py fixtures/audio/sine_440_025s.wav \
+  --weights fixtures/reference/hf --json
+```
+
+For Rust parity, `rustymimi` requires a Moshi tokenizer checkpoint rather than
+the Hugging Face `kyutai/mimi/model.safetensors` file:
 
 ```bash
 RUSTYMIMI_WEIGHTS="$(python - <<'PY'
@@ -46,58 +143,30 @@ print(hf_hub_download(
 ))
 PY
 )"
-python -m mimi_mlx.cli parity fixtures/audio/sine_440_025s.wav \
+
+mimi-mlx parity fixtures/audio/sine_440_025s.wav \
   --reference rustymimi \
   --weights fixtures/reference/hf \
   --reference-weights "$RUSTYMIMI_WEIGHTS" \
   --json
 ```
 
-`rustymimi` does not load the Hugging Face `kyutai/mimi/model.safetensors`
-file directly; it expects a Moshi tokenizer checkpoint with the Rust/Candle
-tensor names.
+## Documentation
 
-## Smoke Checks
+| Document | Purpose |
+| --- | --- |
+| `docs/usage.md` | Install modes, model assets, CLI commands, Python API, token layout, batching, and troubleshooting. |
+| `docs/development.md` | Contributor setup, validation commands, fixture regeneration, parity workflow, and release checks. |
+| `docs/architecture.md` | Mimi architecture facts, implementation boundary, and parity risks. |
+| `docs/weights.md` | Official checkpoint details, tensor families, and MLX weight mapping notes. |
+| `docs/parity.md` | Current parity status, verification commands, and fixture coverage. |
+| `docs/benchmarks.md` | Benchmark entrypoints and current local smoke results. |
+| `fixtures/README.md` | Committed fixture manifest, source audio notes, and regeneration command. |
 
-```bash
-pytest -q
-ruff check .
-python -m mimi_mlx.cli --help
-```
+## Non-goals
 
-Local full parity verification, once weights are present:
-
-```bash
-python scripts/export_reference_fixtures.py --weights fixtures/reference/hf
-pytest -q
-python scripts/compare_reference.py fixtures/audio/sine_440_025s.wav \
-  --weights fixtures/reference/hf --json
-python -m mimi_mlx.cli parity fixtures/audio/sine_440_025s.wav \
-  --reference rustymimi \
-  --weights fixtures/reference/hf \
-  --reference-weights "$RUSTYMIMI_WEIGHTS" \
-  --json
-```
-
-## API
-
-```python
-import mlx.core as mx
-from mimi_mlx import MimiTokenizer
-
-tokenizer = MimiTokenizer.from_pretrained("fixtures/reference/hf")
-audio = mx.zeros((24_000,))
-tokens = tokenizer.encode(audio, sample_rate=24_000)
-reconstructed = tokenizer.decode(tokens.codes, sample_rate=24_000)
-```
-
-`tokens.codes` uses `[batch, frames, codebooks]`. Use
-`mimi_mlx.layouts.to_upstream_layout` for upstream `[batch, codebooks, frames]`.
-
-## Non-Goals
-
-- No production wrapper around `rustymimi`, PyTorch, torchaudio, or upstream Moshi code.
-- No approximate token parity acceptance.
-- Same-length batches are supported directly. Variable-length padded batches are treated as
-  full-length unless explicit `lengths` are passed, so downstream callers must pass `lengths`
-  for padded inputs.
+- No production wrapper around `rustymimi`, PyTorch, `torchaudio`, or upstream
+  Moshi code.
+- No approximate token parity acceptance for encode paths.
+- No hidden token layout conversion. Public APIs use explicit canonical and
+  upstream layout helpers.

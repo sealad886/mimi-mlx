@@ -2,6 +2,9 @@
 
 Research date: 2026-05-09.
 
+See `docs/usage.md` for download commands and `docs/development.md` for the
+validation workflow.
+
 ## Official Checkpoint
 
 - Repository: `kyutai/mimi`
@@ -13,6 +16,18 @@ Research date: 2026-05-09.
 - Tensor count from header: 350
 - Parameter dtype: F32
 - Parameter count: 96,151,393
+
+Download the checkpoint into the ignored local fixture directory:
+
+```bash
+python scripts/download_reference_assets.py
+```
+
+Validate the downloaded file:
+
+```bash
+python scripts/inspect_weights.py fixtures/reference/hf/model.safetensors
+```
 
 ## Name Families
 

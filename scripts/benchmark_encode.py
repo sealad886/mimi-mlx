@@ -9,10 +9,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Benchmark MLX Mimi encode")
     parser.add_argument("--weights", required=True)
     parser.add_argument("--input-dir", required=True)
+    parser.add_argument("--prefetch-workers", type=int, default=2)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
-    argv = ["benchmark", "encode", "--weights", args.weights, "--input-dir", args.input_dir]
+    argv = [
+        "benchmark",
+        "encode",
+        "--weights",
+        args.weights,
+        "--input-dir",
+        args.input_dir,
+        "--prefetch-workers",
+        str(args.prefetch_workers),
+    ]
     if args.json:
         argv.append("--json")
     return cli_main(argv)

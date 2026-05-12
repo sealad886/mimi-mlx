@@ -1,5 +1,8 @@
 # Parity Progress
 
+For day-to-day parity commands, see `docs/development.md`. For public usage of
+the parity CLI, see `docs/usage.md`.
+
 ## 2026-05-09
 
 Stages 0 through 8 are implemented for the current local fixture set.
